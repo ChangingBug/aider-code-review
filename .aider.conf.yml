@@ -1,0 +1,29 @@
+# Aider 配置文件
+# 此文件会被挂载到容器中，控制Aider的行为
+
+# 禁用自动提交（纯审查模式）
+no-auto-commits: true
+no-git: true
+
+# 审查模式，不需要交互确认
+yes: true
+
+# 禁用彩色输出（便于日志解析）
+no-pretty: true
+
+# RepoMap配置
+# 启用RepoMap帮助模型理解代码上下文
+# 如果vLLM显存吃紧，可以设置 no-repo-map: true
+map-tokens: 2048
+
+# 禁用自动lint
+no-auto-lint: true
+
+# 禁用自动测试
+no-auto-test: true
+
+# 编辑格式（使用diff格式）
+edit-format: diff
+
+# 流式输出
+stream: true

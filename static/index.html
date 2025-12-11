@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aider Code Review - 仪表盘</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">🔍</div>
+                <span class="logo-text">Code Review</span>
+            </div>
+            
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#" class="nav-link active" data-page="overview">
+                        <span class="nav-icon">📊</span>
+                        <span>概览</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="reviews">
+                        <span class="nav-icon">📝</span>
+                        <span>审查记录</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="authors">
+                        <span class="nav-icon">👥</span>
+                        <span>提交人统计</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="projects">
+                        <span class="nav-icon">📁</span>
+                        <span>项目统计</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 概览页面 -->
+            <div id="page-overview" class="page">
+                <div class="page-header">
+                    <h1 class="page-title">仪表盘概览</h1>
+                    <p class="page-subtitle">AI代码审查系统运行状态一览</p>
+                </div>
+
+                <!-- 统计卡片 -->
+                <div class="stats-grid" id="overview-stats">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon primary">📋</div>
+                        </div>
+                        <div class="stat-value" id="stat-total">--</div>
+                        <div class="stat-label">总审查次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon success">✅</div>
+                        </div>
+                        <div class="stat-value" id="stat-completed">--</div>
+                        <div class="stat-label">已完成审查</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon warning">⚠️</div>
+                        </div>
+                        <div class="stat-value" id="stat-issues">--</div>
+                        <div class="stat-label">发现问题总数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon danger">🔴</div>
+                        </div>
+                        <div class="stat-value" id="stat-critical">--</div>
+                        <div class="stat-label">严重问题</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon info">⚡</div>
+                        </div>
+                        <div class="stat-value" id="stat-avg-time">--</div>
+                        <div class="stat-label">平均处理时间(秒)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <div class="stat-icon success">⭐</div>
+                        </div>
+                        <div class="stat-value" id="stat-avg-score">--</div>
+                        <div class="stat-label">平均质量评分</div>
+                    </div>
+                </div>
+
+                <!-- 图表 -->
+                <div class="chart-grid">
+                    <div class="chart-card full-width">
+                        <h3 class="chart-title">📈 每日审查趋势</h3>
+                        <div class="chart-container">
+                            <canvas id="chart-daily-trend"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h3 class="chart-title">📊 审查类型分布</h3>
+                        <div class="chart-container">
+                            <canvas id="chart-review-type"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h3 class="chart-title">🔴 问题严重程度分布</h3>
+                        <div class="chart-container">
+                            <canvas id="chart-issue-severity"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 审查记录页面 -->
+            <div id="page-reviews" class="page" style="display: none;">
+                <div class="page-header">
+                    <h1 class="page-title">审查记录</h1>
+                    <p class="page-subtitle">所有代码审查记录列表</p>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">最近审查</h3>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>项目</th>
+                                <th>提交人</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                                <th>问题数</th>
+                                <th>质量评分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviews-table-body">
+                            <tr>
+                                <td colspan="7" class="loading">
+                                    <div class="spinner"></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 提交人统计页面 -->
+            <div id="page-authors" class="page" style="display: none;">
+                <div class="page-header">
+                    <h1 class="page-title">提交人统计</h1>
+                    <p class="page-subtitle">按开发者统计代码质量和提交情况</p>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">开发者排行榜</h3>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>开发者</th>
+                                <th>审查次数</th>
+                                <th>问题总数</th>
+                                <th>严重问题</th>
+                                <th>平均评分</th>
+                                <th>问题率</th>
+                            </tr>
+                        </thead>
+                        <tbody id="authors-table-body">
+                            <tr>
+                                <td colspan="6" class="loading">
+                                    <div class="spinner"></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 作者活跃度图表 -->
+                <div class="chart-grid" style="margin-top: 24px;">
+                    <div class="chart-card full-width">
+                        <h3 class="chart-title">👥 开发者贡献对比</h3>
+                        <div class="chart-container">
+                            <canvas id="chart-author-contribution"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 项目统计页面 -->
+            <div id="page-projects" class="page" style="display: none;">
+                <div class="page-header">
+                    <h1 class="page-title">项目统计</h1>
+                    <p class="page-subtitle">按项目统计审查情况</p>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">
+                        <h3 class="table-title">项目排行榜</h3>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>项目名称</th>
+                                <th>平台</th>
+                                <th>审查次数</th>
+                                <th>问题总数</th>
+                                <th>贡献者数</th>
+                                <th>平均评分</th>
+                            </tr>
+                        </thead>
+                        <tbody id="projects-table-body">
+                            <tr>
+                                <td colspan="6" class="loading">
+                                    <div class="spinner"></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 审查详情模态框 -->
+    <div class="modal-overlay" id="review-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">审查详情</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="review-modal-body">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
