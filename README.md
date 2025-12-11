@@ -11,6 +11,7 @@
 - 🔒 **内网友好**：适配 vLLM 内网部署场景
 - 📦 **代码与镜像分离**：便于内网更新和维护
 - 📊 **Web仪表盘**：可视化统计分析
+- ⚙️ **在线配置**：通过Web页面配置，实时生效，无需重启
 
 ## 🖥️ Web 仪表盘
 
@@ -20,6 +21,7 @@
 - **审查记录**：历史审查列表和详情
 - **提交人统计**：按开发者统计代码质量
 - **项目统计**：按项目统计审查情况
+- **⚙️ 系统设置**：在线配置Git/vLLM/Aider参数
 
 ## 架构
 
@@ -53,10 +55,6 @@ cd ai_code_review
 **方式一：使用 docker run 脚本（推荐）**
 
 ```bash
-# 配置环境变量
-cp .env.example .env
-vim .env  # 编辑配置
-
 # 启动服务
 ./scripts/run.sh
 
@@ -67,58 +65,39 @@ vim .env  # 编辑配置
 **方式二：使用 docker-compose**
 
 ```bash
-cp .env.example .env
-vim .env
 docker-compose up -d
 ```
 
-**方式三：直接 docker run**
+### 3. 配置系统参数
 
-```bash
-docker run -d \
-  --name aider-code-review \
-  -p 5000:5000 \
-  -v $(pwd):/app:ro \
-  -v $(pwd)/data:/app/data \
-  -v ~/.ssh:/home/reviewer/.ssh:ro \
-  -e VLLM_API_BASE="http://192.168.1.100:8000/v1" \
-  -e VLLM_MODEL_NAME="openai/qwen-2.5-coder-32b" \
-  -e GIT_TOKEN="your-token" \
-  -e GIT_API_URL="http://gitlab.internal/api/v4" \
-  aider-reviewer:latest
-```
+启动后访问 `http://<server_ip>:5000/`，点击 **⚙️ 系统设置**：
 
-### 3. 配置 Webhook
+| 配置项 | 说明 |
+|--------|------|
+| **Git平台类型** | gitlab / gitea / github |
+| **服务器地址** | 如 `http://code.kf.zjnx.net` |
+| **HTTP用户名/密码** | 用于克隆私有仓库 |
+| **API地址** | 如 `http://code.kf.zjnx.net/api/v4` |
+| **API Token** | 用于回写评论 |
+| **启用评论回写** | 开关控制是否发布审查评论 |
+| **vLLM API地址** | 如 `http://192.168.1.100:8000/v1` |
+| **模型名称** | 如 `openai/qwen-2.5-coder-32b` |
+
+> 💡 所有配置修改后**立即生效**，无需重启容器
+
+### 4. 配置 Webhook
 
 在 Git 平台配置 Webhook：
 - **URL**: `http://<server_ip>:5000/webhook`
 - **触发事件**: Push events, Merge request events
 
-### 4. 访问仪表盘
-
-打开浏览器访问 `http://<server_ip>:5000/`
-
-## 配置说明
-
-### 环境变量
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `VLLM_API_BASE` | vLLM API地址 | `http://192.168.1.100:8000/v1` |
-| `VLLM_API_KEY` | API密钥 | `sk-xxx` |
-| `VLLM_MODEL_NAME` | 模型名称 | `openai/qwen-2.5-coder-32b` |
-| `GIT_PLATFORM` | Git平台类型 | `gitlab` |
-| `GIT_API_URL` | Git API地址 | `http://gitlab.internal/api/v4` |
-| `GIT_TOKEN` | Git访问令牌 | - |
-| `AIDER_MAP_TOKENS` | RepoMap Token数 | `262144` |
-| `SERVER_PORT` | 服务端口 | `5000` |
-
 ## 目录结构
 
 ```
 ai_code_review/
-├── review_server.py      # FastAPI主服务 + 统计API
-├── config.py             # 配置管理
+├── review_server.py      # FastAPI主服务 + API
+├── config.py             # 配置管理（环境变量默认值）
+├── settings.py           # 动态配置管理（数据库存储）
 ├── utils.py              # 工具函数
 ├── models.py             # 数据库模型
 ├── database.py           # 数据库管理
@@ -130,7 +109,6 @@ ai_code_review/
 ├── data/                 # 数据库文件(自动创建)
 ├── Dockerfile
 ├── docker-compose.yml
-├── .env.example
 ├── scripts/
 │   ├── build.sh          # 外网构建脚本
 │   ├── deploy.sh         # 内网部署脚本
@@ -152,6 +130,13 @@ ai_code_review/
 | `GET /api/stats/reviews` | 审查记录列表 |
 | `GET /api/stats/review/{task_id}` | 审查详情 |
 
+### 设置API
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/settings` | 获取所有配置 |
+| `POST /api/settings` | 批量更新配置 |
+
 ### 操作API
 
 | 端点 | 说明 |
@@ -163,3 +148,4 @@ ai_code_review/
 ## License
 
 MIT
+
