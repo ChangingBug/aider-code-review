@@ -5,12 +5,13 @@ import logging
 import re
 from typing import List, Optional
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 配置日志 - 仅配置本模块logger，避免影响其他模块
 logger = logging.getLogger("aider-reviewer")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 def parse_aider_output(raw_output: str) -> str:

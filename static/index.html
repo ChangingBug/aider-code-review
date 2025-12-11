@@ -6,7 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aider Code Review - 仪表盘</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 字体：优先使用本地系统字体，内网环境无需外部CDN -->
+    <style>
+        @font-face {
+            font-family: 'Inter';
+            src: local('Inter'), local('PingFang SC'), local('Microsoft YaHei'), local('SimHei');
+        }
+    </style>
+    <!-- Chart.js: 内网环境请下载chart.js到static目录并修改下方路径 -->
+    <!-- 本地路径示例: <script src="/static/chart.min.js"></script> -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 

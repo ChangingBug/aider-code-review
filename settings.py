@@ -2,20 +2,15 @@
 动态配置管理模块
 支持通过数据库存储配置，实现运行时修改、实时生效
 """
-import os
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, create_engine
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 数据库路径
-DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "reviews.db"))
+# 复用database模块的引擎，避免重复创建连接
+from database import engine
 
-# 确保data目录存在
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-# 创建引擎和Base
-engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+# 创建独立的Base（配置表独立于业务表）
 SettingsBase = declarative_base()
 
 

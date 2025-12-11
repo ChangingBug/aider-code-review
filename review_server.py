@@ -67,11 +67,13 @@ async def index():
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
+    # 使用动态配置
+    settings = SettingsManager.get_all()
     return {
         "status": "healthy",
         "version": config.version,
-        "vllm_endpoint": config.vllm.api_base,
-        "git_platform": config.git.platform
+        "vllm_endpoint": settings.get('vllm_api_base', config.vllm.api_base),
+        "git_platform": settings.get('git_platform', config.git.platform)
     }
 
 
@@ -754,9 +756,11 @@ async def manual_review(request: Request, background_tasks: BackgroundTasks):
 if __name__ == "__main__":
     import uvicorn
     
+    # 使用动态配置显示启动信息
+    settings = SettingsManager.get_all()
     logger.info(f"启动Aider Code Review服务 v{config.version}")
-    logger.info(f"vLLM端点: {config.vllm.api_base}")
-    logger.info(f"Git平台: {config.git.platform}")
+    logger.info(f"vLLM端点: {settings.get('vllm_api_base', config.vllm.api_base)}")
+    logger.info(f"Git平台: {settings.get('git_platform', config.git.platform)}")
     logger.info(f"仪表盘: http://{config.server.host}:{config.server.port}/")
     
     uvicorn.run(
