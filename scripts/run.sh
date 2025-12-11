@@ -43,6 +43,7 @@ echo ""
 mkdir -p "$PROJECT_DIR/data"
 
 # 启动容器
+# 注意：Git/vLLM/Aider相关配置已移至Web管理页面（/settings），无需在此配置
 docker run -d \
     --name ${CONTAINER_NAME} \
     --restart unless-stopped \
@@ -50,17 +51,6 @@ docker run -d \
     -v "$PROJECT_DIR:/app:ro" \
     -v "$PROJECT_DIR/data:/app/data" \
     -v "$PROJECT_DIR/.aider.conf.yml:/home/reviewer/.aider.conf.yml:ro" \
-    -e VLLM_API_BASE="${VLLM_API_BASE:-http://192.168.1.100:8000/v1}" \
-    -e VLLM_API_KEY="${VLLM_API_KEY:-sk-xxx}" \
-    -e VLLM_MODEL_NAME="${VLLM_MODEL_NAME:-openai/qwen-2.5-coder-32b}" \
-    -e GIT_TOKEN="${GIT_TOKEN}" \
-    -e GIT_API_URL="${GIT_API_URL:-http://gitlab.internal/api/v4}" \
-    -e GIT_PLATFORM="${GIT_PLATFORM:-gitlab}" \
-    -e GIT_HTTP_USER="${GIT_HTTP_USER}" \
-    -e GIT_HTTP_PASSWORD="${GIT_HTTP_PASSWORD}" \
-    -e GIT_SERVER_URL="${GIT_SERVER_URL}" \
-    -e AIDER_MAP_TOKENS="${AIDER_MAP_TOKENS:-262144}" \
-    -e AIDER_NO_REPO_MAP="${AIDER_NO_REPO_MAP:-false}" \
     -e LOG_LEVEL="${LOG_LEVEL:-INFO}" \
     -e SERVER_HOST=0.0.0.0 \
     -e SERVER_PORT=5000 \
@@ -72,11 +62,17 @@ echo "=========================================="
 echo "服务启动成功！"
 echo "=========================================="
 echo "仪表盘: http://localhost:${PORT}/"
-echo "健康检查: http://localhost:${PORT}/health"
+echo "系统设置: http://localhost:${PORT}/#settings"
+echo ""
+echo "首次使用请访问「系统设置」页面配置："
+echo "  - Git平台连接信息（HTTP认证、API Token）"
+echo "  - vLLM模型地址"
+echo "  - Aider参数"
 echo ""
 echo "常用命令:"
 echo "  查看日志: docker logs -f ${CONTAINER_NAME}"
 echo "  停止服务: docker stop ${CONTAINER_NAME}"
 echo "  重启服务: docker restart ${CONTAINER_NAME}"
 echo "=========================================="
+
 

@@ -19,24 +19,24 @@ const API = {
 
 // ==================== 页面路由 ====================
 
-const pages = ['overview', 'reviews', 'authors', 'projects'];
+const pages = ['overview', 'reviews', 'authors', 'projects', 'settings'];
 let currentPage = 'overview';
 let charts = {};
 
 function navigateTo(page) {
     if (!pages.includes(page)) return;
-    
+
     // 更新导航状态
     document.querySelectorAll('.nav-link').forEach(link => {
         link.classList.toggle('active', link.dataset.page === page);
     });
-    
+
     // 切换页面显示
     pages.forEach(p => {
         const el = document.getElementById(`page-${p}`);
         if (el) el.style.display = p === page ? 'block' : 'none';
     });
-    
+
     currentPage = page;
     loadPageData(page);
 }
@@ -65,6 +65,9 @@ async function loadPageData(page) {
         case 'projects':
             await loadProjects();
             break;
+        case 'settings':
+            await loadSettings();
+            break;
     }
 }
 
@@ -72,7 +75,7 @@ async function loadPageData(page) {
 
 async function loadOverview() {
     const data = await API.get('/stats/overview');
-    
+
     if (data) {
         // 更新统计卡片
         document.getElementById('stat-total').textContent = data.total_reviews || 0;
@@ -81,10 +84,10 @@ async function loadOverview() {
         document.getElementById('stat-critical').textContent = data.critical_issues || 0;
         document.getElementById('stat-avg-time').textContent = data.avg_processing_time || '--';
         document.getElementById('stat-avg-score').textContent = data.avg_quality_score || '--';
-        
+
         // 更新审查类型饼图
         updateReviewTypeChart(data.commit_reviews, data.mr_reviews);
-        
+
         // 更新问题严重程度饼图
         updateIssueSeverityChart(
             data.critical_issues,
@@ -92,7 +95,7 @@ async function loadOverview() {
             data.suggestion_issues
         );
     }
-    
+
     // 加载每日趋势
     const trend = await API.get('/stats/daily-trend?days=30');
     if (trend) {
@@ -103,15 +106,15 @@ async function loadOverview() {
 function updateDailyTrendChart(data) {
     const ctx = document.getElementById('chart-daily-trend');
     if (!ctx) return;
-    
+
     if (charts.dailyTrend) {
         charts.dailyTrend.destroy();
     }
-    
+
     const labels = data.map(d => d.date);
     const counts = data.map(d => d.count);
     const issues = data.map(d => d.issues);
-    
+
     charts.dailyTrend = new Chart(ctx, {
         type: 'line',
         data: {
@@ -160,11 +163,11 @@ function updateDailyTrendChart(data) {
 function updateReviewTypeChart(commits, mrs) {
     const ctx = document.getElementById('chart-review-type');
     if (!ctx) return;
-    
+
     if (charts.reviewType) {
         charts.reviewType.destroy();
     }
-    
+
     charts.reviewType = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -191,11 +194,11 @@ function updateReviewTypeChart(commits, mrs) {
 function updateIssueSeverityChart(critical, warning, suggestion) {
     const ctx = document.getElementById('chart-issue-severity');
     if (!ctx) return;
-    
+
     if (charts.issueSeverity) {
         charts.issueSeverity.destroy();
     }
-    
+
     charts.issueSeverity = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -224,7 +227,7 @@ function updateIssueSeverityChart(critical, warning, suggestion) {
 async function loadReviews() {
     const data = await API.get('/stats/reviews?limit=50');
     const tbody = document.getElementById('reviews-table-body');
-    
+
     if (!data || !data.reviews || data.reviews.length === 0) {
         tbody.innerHTML = `
             <tr>
@@ -239,7 +242,7 @@ async function loadReviews() {
         `;
         return;
     }
-    
+
     tbody.innerHTML = data.reviews.map(review => `
         <tr onclick="showReviewDetail('${review.task_id}')" style="cursor: pointer;">
             <td>${formatDate(review.created_at)}</td>
@@ -265,7 +268,7 @@ async function loadReviews() {
 async function loadAuthors() {
     const data = await API.get('/stats/authors?limit=20');
     const tbody = document.getElementById('authors-table-body');
-    
+
     if (!data || data.length === 0) {
         tbody.innerHTML = `
             <tr>
@@ -280,7 +283,7 @@ async function loadAuthors() {
         `;
         return;
     }
-    
+
     tbody.innerHTML = data.map(author => `
         <tr>
             <td>
@@ -299,7 +302,7 @@ async function loadAuthors() {
             <td>${author.issue_rate}</td>
         </tr>
     `).join('');
-    
+
     // 更新贡献对比图表
     updateAuthorContributionChart(data);
 }
@@ -307,13 +310,13 @@ async function loadAuthors() {
 function updateAuthorContributionChart(data) {
     const ctx = document.getElementById('chart-author-contribution');
     if (!ctx) return;
-    
+
     if (charts.authorContribution) {
         charts.authorContribution.destroy();
     }
-    
+
     const top10 = data.slice(0, 10);
-    
+
     charts.authorContribution = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -358,7 +361,7 @@ function updateAuthorContributionChart(data) {
 async function loadProjects() {
     const data = await API.get('/stats/projects?limit=20');
     const tbody = document.getElementById('projects-table-body');
-    
+
     if (!data || data.length === 0) {
         tbody.innerHTML = `
             <tr>
@@ -373,7 +376,7 @@ async function loadProjects() {
         `;
         return;
     }
-    
+
     tbody.innerHTML = data.map(project => `
         <tr>
             <td><strong>${project.project_name}</strong></td>
@@ -391,17 +394,17 @@ async function loadProjects() {
 async function showReviewDetail(taskId) {
     const modal = document.getElementById('review-modal');
     const body = document.getElementById('review-modal-body');
-    
+
     modal.classList.add('active');
     body.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-    
+
     const data = await API.get(`/stats/review/${taskId}`);
-    
+
     if (!data) {
         body.innerHTML = '<div class="empty-state"><div class="empty-title">加载失败</div></div>';
         return;
     }
-    
+
     body.innerHTML = `
         <div style="margin-bottom: 20px;">
             <h4 style="margin-bottom: 12px;">基本信息</h4>
@@ -497,7 +500,7 @@ function renderScore(score) {
     if (scoreNum >= 80) className = 'excellent';
     else if (scoreNum >= 60) className = 'good';
     else if (scoreNum < 40) className = 'poor';
-    
+
     return `<span class="score ${className}">${scoreNum.toFixed(0)}</span>`;
 }
 
@@ -507,13 +510,84 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ==================== 设置页面 ====================
+
+async function loadSettings() {
+    const data = await API.get('/settings');
+    if (!data) return;
+
+    // 填充表单
+    data.forEach(setting => {
+        const input = document.querySelector(`[name="${setting.key}"]`);
+        if (!input) return;
+
+        if (input.type === 'checkbox') {
+            input.checked = setting.value === 'true';
+        } else {
+            input.value = setting.value || '';
+        }
+    });
+}
+
+async function saveSettings(e) {
+    e.preventDefault();
+
+    const form = document.getElementById('settings-form');
+    const statusEl = document.getElementById('settings-status');
+    const formData = new FormData(form);
+
+    // 构建设置对象
+    const settings = {};
+
+    // 文本输入
+    ['git_platform', 'git_server_url', 'git_http_user', 'git_http_password',
+        'git_api_url', 'git_token', 'vllm_api_base', 'vllm_api_key', 'vllm_model_name',
+        'aider_map_tokens'].forEach(key => {
+            settings[key] = formData.get(key) || '';
+        });
+
+    // 复选框（checkbox未选中时不会出现在FormData中）
+    settings['enable_comment'] = form.querySelector('[name="enable_comment"]').checked ? 'true' : 'false';
+    settings['aider_no_repo_map'] = form.querySelector('[name="aider_no_repo_map"]').checked ? 'true' : 'false';
+
+    // 发送保存请求
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+
+        if (response.ok) {
+            statusEl.textContent = '✓ 设置已保存';
+            statusEl.className = 'settings-status';
+        } else {
+            statusEl.textContent = '✗ 保存失败';
+            statusEl.className = 'settings-status error';
+        }
+
+        // 3秒后清除状态
+        setTimeout(() => {
+            statusEl.textContent = '';
+        }, 3000);
+    } catch (error) {
+        statusEl.textContent = '✗ 保存失败: ' + error.message;
+        statusEl.className = 'settings-status error';
+    }
+}
+
+// 绑定设置表单提交
+document.getElementById('settings-form')?.addEventListener('submit', saveSettings);
+
 // ==================== 初始化 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
     navigateTo('overview');
-    
-    // 每30秒自动刷新
+
+    // 每30秒自动刷新（设置页面除外）
     setInterval(() => {
-        loadPageData(currentPage);
+        if (currentPage !== 'settings') {
+            loadPageData(currentPage);
+        }
     }, 30000);
 });

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <div class="dashboard">
         <!-- 侧边栏 -->
@@ -16,7 +18,7 @@
                 <div class="logo-icon">🔍</div>
                 <span class="logo-text">Code Review</span>
             </div>
-            
+
             <ul class="nav-menu">
                 <li class="nav-item">
                     <a href="#" class="nav-link active" data-page="overview">
@@ -40,6 +42,12 @@
                     <a href="#" class="nav-link" data-page="projects">
                         <span class="nav-icon">📁</span>
                         <span>项目统计</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="#" class="nav-link" data-page="settings">
+                        <span class="nav-icon">⚙️</span>
+                        <span>系统设置</span>
                     </a>
                 </li>
             </ul>
@@ -232,6 +240,108 @@
                     </table>
                 </div>
             </div>
+
+            <!-- 系统设置页面 -->
+            <div id="page-settings" class="page" style="display: none;">
+                <div class="page-header">
+                    <h1 class="page-title">系统设置</h1>
+                    <p class="page-subtitle">配置服务参数，保存后立即生效</p>
+                </div>
+
+                <form id="settings-form">
+                    <!-- Git 配置 -->
+                    <div class="settings-card">
+                        <h3 class="settings-title">🔗 Git 平台配置</h3>
+                        <div class="settings-grid">
+                            <div class="form-group">
+                                <label>平台类型</label>
+                                <select name="git_platform" class="form-input">
+                                    <option value="gitlab">GitLab</option>
+                                    <option value="gitea">Gitea</option>
+                                    <option value="github">GitHub</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>服务器地址</label>
+                                <input type="text" name="git_server_url" class="form-input"
+                                    placeholder="http://code.example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>HTTP用户名</label>
+                                <input type="text" name="git_http_user" class="form-input" placeholder="用于克隆仓库">
+                            </div>
+                            <div class="form-group">
+                                <label>HTTP密码</label>
+                                <input type="password" name="git_http_password" class="form-input" placeholder="用于克隆仓库">
+                            </div>
+                            <div class="form-group">
+                                <label>API地址</label>
+                                <input type="text" name="git_api_url" class="form-input"
+                                    placeholder="http://code.example.com/api/v4">
+                            </div>
+                            <div class="form-group">
+                                <label>API Token</label>
+                                <input type="password" name="git_token" class="form-input" placeholder="用于回写评论">
+                            </div>
+                            <div class="form-group full-width">
+                                <label class="toggle-label">
+                                    <input type="checkbox" name="enable_comment" class="toggle-input" checked>
+                                    <span class="toggle-switch"></span>
+                                    <span>启用评论回写</span>
+                                </label>
+                                <small class="form-hint">关闭后将不会在Git平台发布审查评论</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- vLLM 配置 -->
+                    <div class="settings-card">
+                        <h3 class="settings-title">🤖 vLLM 模型配置</h3>
+                        <div class="settings-grid">
+                            <div class="form-group">
+                                <label>API地址</label>
+                                <input type="text" name="vllm_api_base" class="form-input"
+                                    placeholder="http://192.168.1.100:8000/v1">
+                            </div>
+                            <div class="form-group">
+                                <label>API密钥</label>
+                                <input type="text" name="vllm_api_key" class="form-input" placeholder="sk-xxx">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>模型名称</label>
+                                <input type="text" name="vllm_model_name" class="form-input"
+                                    placeholder="openai/qwen-2.5-coder-32b">
+                                <small class="form-hint">使用 openai/ 前缀让Aider使用OpenAI协议</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aider 配置 -->
+                    <div class="settings-card">
+                        <h3 class="settings-title">🔧 Aider 配置</h3>
+                        <div class="settings-grid">
+                            <div class="form-group">
+                                <label>RepoMap Token数</label>
+                                <input type="number" name="aider_map_tokens" class="form-input" placeholder="262144">
+                                <small class="form-hint">较大值提供更好的上下文</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="toggle-label">
+                                    <input type="checkbox" name="aider_no_repo_map" class="toggle-input">
+                                    <span class="toggle-switch"></span>
+                                    <span>禁用 RepoMap</span>
+                                </label>
+                                <small class="form-hint">显存不足时可开启</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button type="submit" class="btn btn-primary">💾 保存设置</button>
+                        <span id="settings-status" class="settings-status"></span>
+                    </div>
+                </form>
+            </div>
         </main>
     </div>
 
@@ -252,4 +362,5 @@
 
     <script src="/static/app.js"></script>
 </body>
+
 </html>

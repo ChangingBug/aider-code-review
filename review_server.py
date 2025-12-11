@@ -34,6 +34,7 @@ from utils import (
 from database import init_database, get_db, get_db_session
 from models import ReviewRecord, ReviewIssue, ReviewStatus, ReviewStrategy, IssueSeverity
 from statistics import StatisticsService
+from settings import SettingsManager
 
 app = FastAPI(
     title="Aider Code Review Service",
@@ -140,6 +141,49 @@ async def get_categories(db: Session = Depends(get_db)):
     """获取问题类型分布"""
     service = StatisticsService(db)
     return service.get_issue_categories()
+
+
+# ==================== 系统设置API ====================
+
+@app.get("/api/settings")
+async def get_settings():
+    """获取所有系统设置"""
+    return SettingsManager.get_all_with_meta()
+
+
+@app.post("/api/settings")
+async def update_settings(request: Request):
+    """更新系统设置"""
+    payload = await request.json()
+    
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload format")
+    
+    success = SettingsManager.set_many(payload)
+    if success:
+        return {"status": "success", "message": "设置已保存"}
+    else:
+        raise HTTPException(status_code=500, detail="保存设置失败")
+
+
+@app.get("/api/settings/{key}")
+async def get_setting(key: str):
+    """获取单个设置"""
+    value = SettingsManager.get(key)
+    return {"key": key, "value": value}
+
+
+@app.post("/api/settings/{key}")
+async def set_setting(key: str, request: Request):
+    """设置单个配置"""
+    payload = await request.json()
+    value = payload.get("value", "")
+    
+    success = SettingsManager.set(key, str(value))
+    if success:
+        return {"status": "success", "key": key, "value": value}
+    else:
+        raise HTTPException(status_code=500, detail="保存设置失败")
 
 
 # ==================== Webhook处理 ====================
@@ -403,14 +447,20 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         if os.path.exists(work_dir):
             shutil.rmtree(work_dir)
         
+        # 从动态配置读取Git认证信息
+        settings = SettingsManager.get_all()
+        git_http_user = settings.get('git_http_user', '')
+        git_http_password = settings.get('git_http_password', '')
+        git_server_url = settings.get('git_server_url', '')
+        
         # 转换为HTTP认证URL（如果配置了HTTP认证）
         clone_url = repo_url
-        if config.git.http_user and config.git.http_password:
+        if git_http_user and git_http_password:
             clone_url = convert_to_http_auth_url(
                 repo_url,
-                config.git.http_user,
-                config.git.http_password,
-                config.git.server_url
+                git_http_user,
+                git_http_password,
+                git_server_url
             )
             logger.info(f"使用HTTP认证克隆仓库")
         
@@ -453,16 +503,24 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         if not valid_files:
             logger.warning("没有有效的代码文件需要审查")
             finalize_review(task_id, start_time, "ℹ️ 本次变更未包含需要审查的代码文件。", 0, 0, 0, 0)
-            post_comment_to_git(context, "ℹ️ 本次变更未包含需要审查的代码文件。")
+            # 检查是否启用评论
+            if SettingsManager.get_bool('enable_comment', True):
+                post_comment_to_git(context, "ℹ️ 本次变更未包含需要审查的代码文件。")
             return
         
         logger.info(f"将审查 {len(valid_files)} 个代码文件: {valid_files}")
         
-        # 4. 构造Aider命令
+        # 4. 构造Aider命令 - 使用动态配置
+        vllm_api_base = settings.get('vllm_api_base', config.vllm.api_base)
+        vllm_api_key = settings.get('vllm_api_key', config.vllm.api_key)
+        vllm_model_name = settings.get('vllm_model_name', config.vllm.model_name)
+        aider_map_tokens = SettingsManager.get_int('aider_map_tokens', config.aider.map_tokens)
+        aider_no_repo_map = SettingsManager.get_bool('aider_no_repo_map', config.aider.no_repo_map)
+        
         env = os.environ.copy()
-        env["OPENAI_API_BASE"] = config.vllm.api_base
-        env["OPENAI_API_KEY"] = config.vllm.api_key
-        env["AIDER_MODEL"] = config.vllm.model_name
+        env["OPENAI_API_BASE"] = vllm_api_base
+        env["OPENAI_API_KEY"] = vllm_api_key
+        env["AIDER_MODEL"] = vllm_model_name
         
         cmd = [
             "aider",
@@ -473,15 +531,16 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
             "--message", prompt,
         ]
         
-        if config.aider.no_repo_map:
+        if aider_no_repo_map:
             cmd.append("--no-repo-map")
         else:
-            cmd.extend(["--map-tokens", str(config.aider.map_tokens)])
+            cmd.extend(["--map-tokens", str(aider_map_tokens)])
         
         cmd.extend(valid_files)
         
         # 5. 执行Aider并捕获输出
         logger.info(f"执行Aider命令: {' '.join(cmd[:6])}...")
+        logger.info(f"使用模型: {vllm_model_name}, API: {vllm_api_base}")
         result = subprocess.run(
             cmd,
             cwd=work_dir,
@@ -509,8 +568,11 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         formatted_report = format_review_comment(review_report, strategy, context)
         finalize_review(task_id, start_time, formatted_report, total_issues, critical, warning, suggestion, quality_score)
         
-        # 9. 回写评论
-        post_comment_to_git(context, formatted_report)
+        # 9. 回写评论（根据开关决定）
+        if SettingsManager.get_bool('enable_comment', True):
+            post_comment_to_git(context, formatted_report)
+        else:
+            logger.info("评论回写已禁用，跳过")
         
         logger.info(f"任务 {task_id} 完成, 发现 {total_issues} 个问题")
         
@@ -585,15 +647,23 @@ def post_comment_to_git(context: dict, report: str):
 
 def post_gitlab_comment(context: dict, report: str):
     """发送GitLab评论"""
-    headers = {"PRIVATE-TOKEN": config.git.token}
+    # 使用动态配置
+    git_token = SettingsManager.get('git_token', config.git.token)
+    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    
+    if not git_token:
+        logger.warning("未配置Git Token，无法发送评论")
+        return
+    
+    headers = {"PRIVATE-TOKEN": git_token}
     
     if context['strategy'] == 'merge_request':
-        url = f"{config.git.api_url}/projects/{context['project_id']}/merge_requests/{context['mr_iid']}/notes"
+        url = f"{git_api_url}/projects/{context['project_id']}/merge_requests/{context['mr_iid']}/notes"
         response = requests.post(url, headers=headers, json={"body": report})
         response.raise_for_status()
         logger.info(f"评论已发送到GitLab MR#{context['mr_iid']}")
     else:
-        url = f"{config.git.api_url}/projects/{context['project_id']}/repository/commits/{context['commit_id']}/comments"
+        url = f"{git_api_url}/projects/{context['project_id']}/repository/commits/{context['commit_id']}/comments"
         response = requests.post(url, headers=headers, json={"note": report})
         response.raise_for_status()
         logger.info(f"评论已发送到GitLab Commit {context['commit_id'][:8]}")
@@ -601,10 +671,17 @@ def post_gitlab_comment(context: dict, report: str):
 
 def post_gitea_comment(context: dict, report: str):
     """发送Gitea评论"""
-    headers = {"Authorization": f"token {config.git.token}"}
+    git_token = SettingsManager.get('git_token', config.git.token)
+    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    
+    if not git_token:
+        logger.warning("未配置Git Token，无法发送评论")
+        return
+    
+    headers = {"Authorization": f"token {git_token}"}
     
     if context['strategy'] == 'merge_request':
-        url = f"{config.git.api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
+        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
         response = requests.post(url, headers=headers, json={"body": report})
         response.raise_for_status()
         logger.info(f"评论已发送到Gitea PR#{context['pr_number']}")
@@ -614,18 +691,25 @@ def post_gitea_comment(context: dict, report: str):
 
 def post_github_comment(context: dict, report: str):
     """发送GitHub评论"""
+    git_token = SettingsManager.get('git_token', config.git.token)
+    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    
+    if not git_token:
+        logger.warning("未配置Git Token，无法发送评论")
+        return
+    
     headers = {
-        "Authorization": f"token {config.git.token}",
+        "Authorization": f"token {git_token}",
         "Accept": "application/vnd.github.v3+json"
     }
     
     if context['strategy'] == 'merge_request':
-        url = f"{config.git.api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
+        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
         response = requests.post(url, headers=headers, json={"body": report})
         response.raise_for_status()
         logger.info(f"评论已发送到GitHub PR#{context['pr_number']}")
     else:
-        url = f"{config.git.api_url}/repos/{context['repo_owner']}/{context['repo_name']}/commits/{context['commit_id']}/comments"
+        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/commits/{context['commit_id']}/comments"
         response = requests.post(url, headers=headers, json={"body": report})
         response.raise_for_status()
         logger.info(f"评论已发送到GitHub Commit {context['commit_id'][:8]}")
