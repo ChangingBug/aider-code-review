@@ -50,13 +50,42 @@ cd ai_code_review
 
 ### 2. 内网部署
 
+**方式一：使用 docker run 脚本（推荐）**
+
 ```bash
 # 配置环境变量
 cp .env.example .env
 vim .env  # 编辑配置
 
-# 部署
-./scripts/deploy.sh
+# 启动服务
+./scripts/run.sh
+
+# 停止服务
+./scripts/stop.sh
+```
+
+**方式二：使用 docker-compose**
+
+```bash
+cp .env.example .env
+vim .env
+docker-compose up -d
+```
+
+**方式三：直接 docker run**
+
+```bash
+docker run -d \
+  --name aider-code-review \
+  -p 5000:5000 \
+  -v $(pwd):/app:ro \
+  -v $(pwd)/data:/app/data \
+  -v ~/.ssh:/home/reviewer/.ssh:ro \
+  -e VLLM_API_BASE="http://192.168.1.100:8000/v1" \
+  -e VLLM_MODEL_NAME="openai/qwen-2.5-coder-32b" \
+  -e GIT_TOKEN="your-token" \
+  -e GIT_API_URL="http://gitlab.internal/api/v4" \
+  aider-reviewer:latest
 ```
 
 ### 3. 配置 Webhook
@@ -103,8 +132,10 @@ ai_code_review/
 ├── docker-compose.yml
 ├── .env.example
 ├── scripts/
-│   ├── build.sh
-│   └── deploy.sh
+│   ├── build.sh          # 外网构建脚本
+│   ├── deploy.sh         # 内网部署脚本
+│   ├── run.sh            # docker run 启动脚本
+│   └── stop.sh           # 停止服务脚本
 └── README.md
 ```
 
