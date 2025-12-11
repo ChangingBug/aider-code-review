@@ -123,3 +123,77 @@ def get_mr_prompt(target_branch: str) -> str:
 def sanitize_branch_name(ref: str) -> str:
     """从Git ref中提取分支名"""
     return ref.replace('refs/heads/', '').replace('refs/tags/', '')
+
+
+def convert_to_http_auth_url(repo_url: str, http_user: str, http_password: str, server_url: str = "") -> str:
+    """
+    将Git仓库URL转换为带HTTP认证的URL
+    
+    支持以下输入格式：
+    - SSH: git@code.example.com:group/project.git
+    - HTTP: http://code.example.com/group/project.git
+    - HTTPS: https://code.example.com/group/project.git
+    
+    输出格式：
+    - http://用户名:密码@code.example.com/group/project.git
+    
+    Args:
+        repo_url: 原始仓库URL
+        http_user: HTTP认证用户名
+        http_password: HTTP认证密码
+        server_url: Git服务器基础URL（可选，用于覆盖解析出的服务器地址）
+    
+    Returns:
+        带认证信息的HTTP URL
+    """
+    from urllib.parse import quote
+    
+    if not http_user or not http_password:
+        logger.warning("未配置HTTP认证信息，使用原始URL")
+        return repo_url
+    
+    # URL编码密码中的特殊字符
+    encoded_password = quote(http_password, safe='')
+    encoded_user = quote(http_user, safe='')
+    
+    # 解析SSH URL: git@host:path.git
+    ssh_pattern = r'^git@([^:]+):(.+)$'
+    ssh_match = re.match(ssh_pattern, repo_url)
+    
+    if ssh_match:
+        host = ssh_match.group(1)
+        path = ssh_match.group(2)
+        
+        # 如果提供了server_url，使用它
+        if server_url:
+            # 从server_url提取协议和主机
+            server_match = re.match(r'^(https?://[^/]+)', server_url)
+            if server_match:
+                base_url = server_match.group(1)
+                # 插入认证信息
+                auth_url = base_url.replace('://', f'://{encoded_user}:{encoded_password}@')
+                return f"{auth_url}/{path}"
+        
+        # 默认使用http
+        return f"http://{encoded_user}:{encoded_password}@{host}/{path}"
+    
+    # 解析HTTP/HTTPS URL
+    http_pattern = r'^(https?)://([^/]+)(.*)$'
+    http_match = re.match(http_pattern, repo_url)
+    
+    if http_match:
+        protocol = http_match.group(1)
+        host = http_match.group(2)
+        path = http_match.group(3)
+        
+        # 检查是否已有认证信息
+        if '@' in host:
+            # 已有认证，替换它
+            host = host.split('@')[-1]
+        
+        return f"{protocol}://{encoded_user}:{encoded_password}@{host}{path}"
+    
+    # 无法解析，返回原始URL
+    logger.warning(f"无法解析仓库URL格式: {repo_url}")
+    return repo_url
+

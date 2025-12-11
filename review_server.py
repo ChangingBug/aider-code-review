@@ -28,7 +28,8 @@ from utils import (
     format_review_comment,
     get_commit_prompt,
     get_mr_prompt,
-    sanitize_branch_name
+    sanitize_branch_name,
+    convert_to_http_auth_url
 )
 from database import init_database, get_db, get_db_session
 from models import ReviewRecord, ReviewIssue, ReviewStatus, ReviewStrategy, IssueSeverity
@@ -402,8 +403,19 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         if os.path.exists(work_dir):
             shutil.rmtree(work_dir)
         
+        # 转换为HTTP认证URL（如果配置了HTTP认证）
+        clone_url = repo_url
+        if config.git.http_user and config.git.http_password:
+            clone_url = convert_to_http_auth_url(
+                repo_url,
+                config.git.http_user,
+                config.git.http_password,
+                config.git.server_url
+            )
+            logger.info(f"使用HTTP认证克隆仓库")
+        
         logger.info(f"克隆仓库: {repo_url} -> {work_dir}")
-        repo = Repo.clone_from(repo_url, work_dir)
+        repo = Repo.clone_from(clone_url, work_dir)
         repo.git.checkout(branch)
         
         # 2. 根据策略获取变更文件和构建Prompt

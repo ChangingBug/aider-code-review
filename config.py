@@ -22,6 +22,11 @@ class GitConfig:
     token: str = field(default_factory=lambda: os.getenv("GIT_TOKEN", ""))
     api_url: str = field(default_factory=lambda: os.getenv("GIT_API_URL", "http://gitlab.internal/api/v4"))
     platform: str = field(default_factory=lambda: os.getenv("GIT_PLATFORM", "gitlab"))  # gitlab, gitea, github
+    # HTTP认证配置（用于克隆仓库）
+    http_user: str = field(default_factory=lambda: os.getenv("GIT_HTTP_USER", ""))
+    http_password: str = field(default_factory=lambda: os.getenv("GIT_HTTP_PASSWORD", ""))
+    # Git服务器基础URL（用于URL转换）
+    server_url: str = field(default_factory=lambda: os.getenv("GIT_SERVER_URL", ""))
 
 
 @dataclass

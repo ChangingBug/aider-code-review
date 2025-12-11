@@ -20,9 +20,6 @@ services:
       # 挂载业务代码（实现代码与镜像分离）
       - ./:/app:ro
 
-      # 挂载SSH密钥（用于克隆私有仓库）
-      - ${SSH_KEY_PATH:-~/.ssh}:/home/reviewer/.ssh:ro
-
       # 挂载Aider配置文件
       - ./.aider.conf.yml:/home/reviewer/.aider.conf.yml:ro
 
