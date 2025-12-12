@@ -653,7 +653,12 @@ async function testAider() {
             resultEl.textContent = `✓ ${data.message} (v${data.details.version})`;
         } else {
             resultEl.className = 'test-result error';
-            resultEl.textContent = `✗ ${data.message}`;
+            // 显示更详细的错误信息
+            let errorDetail = data.details?.error || data.details?.hint || '';
+            if (errorDetail && errorDetail.length > 50) {
+                errorDetail = errorDetail.substring(0, 50) + '...';
+            }
+            resultEl.textContent = `✗ ${data.message}${errorDetail ? ': ' + errorDetail : ''}`;
         }
     } catch (error) {
         resultEl.className = 'test-result error';

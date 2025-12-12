@@ -300,7 +300,7 @@ async def test_vllm_connection():
         url = f"{api_base}/models"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=30)  # 增加超时时间
         response.raise_for_status()
         models_data = response.json()
         
@@ -341,7 +341,7 @@ async def test_aider():
             ["aider", "--version"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30  # 增加超时时间
         )
         
         if result.returncode == 0:
@@ -358,10 +358,15 @@ async def test_aider():
                 }
             }
         else:
+            # 提供更详细的错误信息
+            error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
             return {
                 "success": False,
                 "message": "Aider 运行失败",
-                "details": {"error": result.stderr[:200] if result.stderr else "Unknown error"}
+                "details": {
+                    "returncode": result.returncode,
+                    "error": error_msg[:300] if error_msg else "Unknown error"
+                }
             }
     except FileNotFoundError:
         return {"success": False, "message": "Aider 未安装", "details": {"hint": "请运行 pip install aider-chat"}}
