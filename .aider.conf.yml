@@ -6,7 +6,7 @@ no-auto-commits: true
 no-git: true
 
 # 审查模式，不需要交互确认
-yes: true
+yes-always: true
 
 # 禁用彩色输出（便于日志解析）
 no-pretty: true
