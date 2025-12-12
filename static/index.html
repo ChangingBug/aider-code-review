@@ -299,6 +299,12 @@
                                 </label>
                                 <small class="form-hint">关闭后将不会在Git平台发布审查评论</small>
                             </div>
+                            <div class="form-group full-width">
+                                <button type="button" class="btn btn-test" onclick="testGitConnection()">
+                                    🔗 测试连接
+                                </button>
+                                <span id="git-test-result" class="test-result"></span>
+                            </div>
                         </div>
                     </div>
 
@@ -321,6 +327,12 @@
                                     placeholder="openai/qwen-2.5-coder-32b">
                                 <small class="form-hint">使用 openai/ 前缀让Aider使用OpenAI协议</small>
                             </div>
+                            <div class="form-group full-width">
+                                <button type="button" class="btn btn-test" onclick="testVllmConnection()">
+                                    🧪 测试模型
+                                </button>
+                                <span id="vllm-test-result" class="test-result"></span>
+                            </div>
                         </div>
                     </div>
 
@@ -340,6 +352,12 @@
                                     <span>禁用 RepoMap</span>
                                 </label>
                                 <small class="form-hint">显存不足时可开启</small>
+                            </div>
+                            <div class="form-group full-width">
+                                <button type="button" class="btn btn-test" onclick="testAider()">
+                                    ✅ 验证 Aider
+                                </button>
+                                <span id="aider-test-result" class="test-result"></span>
                             </div>
                         </div>
                     </div>

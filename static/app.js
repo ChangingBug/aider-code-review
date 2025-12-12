@@ -579,6 +579,75 @@ async function saveSettings(e) {
 // 绑定设置表单提交
 document.getElementById('settings-form')?.addEventListener('submit', saveSettings);
 
+// ==================== 连接测试 ====================
+
+async function testGitConnection() {
+    const resultEl = document.getElementById('git-test-result');
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 测试中...';
+
+    try {
+        const response = await fetch('/api/test/git', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.className = 'test-result success';
+            resultEl.textContent = `✓ ${data.message} (${data.details.username})`;
+        } else {
+            resultEl.className = 'test-result error';
+            resultEl.textContent = `✗ ${data.message}`;
+        }
+    } catch (error) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = `✗ 请求失败: ${error.message}`;
+    }
+}
+
+async function testVllmConnection() {
+    const resultEl = document.getElementById('vllm-test-result');
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 测试中...';
+
+    try {
+        const response = await fetch('/api/test/vllm', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.className = 'test-result success';
+            const models = data.details.available_models?.slice(0, 2).join(', ') || '-';
+            resultEl.textContent = `✓ ${data.message} (${data.details.response_time})`;
+        } else {
+            resultEl.className = 'test-result error';
+            resultEl.textContent = `✗ ${data.message}`;
+        }
+    } catch (error) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = `✗ 请求失败: ${error.message}`;
+    }
+}
+
+async function testAider() {
+    const resultEl = document.getElementById('aider-test-result');
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 测试中...';
+
+    try {
+        const response = await fetch('/api/test/aider', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            resultEl.className = 'test-result success';
+            resultEl.textContent = `✓ ${data.message} (v${data.details.version})`;
+        } else {
+            resultEl.className = 'test-result error';
+            resultEl.textContent = `✗ ${data.message}`;
+        }
+    } catch (error) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = `✗ 请求失败: ${error.message}`;
+    }
+}
+
 // ==================== 初始化 ====================
 
 document.addEventListener('DOMContentLoaded', () => {

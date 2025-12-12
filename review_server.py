@@ -188,6 +188,155 @@ async def set_setting(key: str, request: Request):
         raise HTTPException(status_code=500, detail="保存设置失败")
 
 
+# ==================== 验证测试API ====================
+
+@app.post("/api/test/git")
+async def test_git_connection():
+    """测试Git平台连接"""
+    import time
+    start_time = time.time()
+    
+    settings = SettingsManager.get_all()
+    platform = settings.get('git_platform', 'gitlab')
+    api_url = settings.get('git_api_url', '')
+    token = settings.get('git_token', '')
+    
+    if not api_url or not token:
+        return {
+            "success": False,
+            "message": "Git API地址或Token未配置",
+            "details": {}
+        }
+    
+    try:
+        # 根据平台类型构建API请求
+        if platform == 'gitlab':
+            url = f"{api_url}/user"
+            headers = {"PRIVATE-TOKEN": token}
+        elif platform == 'gitea':
+            url = f"{api_url}/user"
+            headers = {"Authorization": f"token {token}"}
+        elif platform == 'github':
+            url = f"{api_url}/user"
+            headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        else:
+            return {"success": False, "message": f"不支持的平台类型: {platform}", "details": {}}
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        user_data = response.json()
+        
+        elapsed = round(time.time() - start_time, 2)
+        
+        return {
+            "success": True,
+            "message": f"{platform.upper()} 连接成功",
+            "details": {
+                "username": user_data.get('username') or user_data.get('login') or user_data.get('name', 'Unknown'),
+                "api_url": api_url,
+                "response_time": f"{elapsed}s"
+            }
+        }
+    except requests.exceptions.Timeout:
+        return {"success": False, "message": "连接超时", "details": {"api_url": api_url}}
+    except requests.exceptions.ConnectionError:
+        return {"success": False, "message": "无法连接到Git服务器", "details": {"api_url": api_url}}
+    except requests.exceptions.HTTPError as e:
+        return {"success": False, "message": f"认证失败: HTTP {e.response.status_code}", "details": {"api_url": api_url}}
+    except Exception as e:
+        return {"success": False, "message": f"测试失败: {str(e)}", "details": {}}
+
+
+@app.post("/api/test/vllm")
+async def test_vllm_connection():
+    """测试vLLM模型连接"""
+    import time
+    start_time = time.time()
+    
+    settings = SettingsManager.get_all()
+    api_base = settings.get('vllm_api_base', '')
+    api_key = settings.get('vllm_api_key', '')
+    model_name = settings.get('vllm_model_name', '')
+    
+    if not api_base:
+        return {"success": False, "message": "vLLM API地址未配置", "details": {}}
+    
+    try:
+        # 尝试获取模型列表
+        url = f"{api_base}/models"
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        models_data = response.json()
+        
+        # 获取可用模型列表
+        available_models = []
+        if 'data' in models_data:
+            available_models = [m.get('id', '') for m in models_data['data']]
+        
+        elapsed = round(time.time() - start_time, 2)
+        
+        # 检查配置的模型是否在列表中
+        model_available = any(model_name in m for m in available_models) if available_models else True
+        
+        return {
+            "success": True,
+            "message": "vLLM 连接成功",
+            "details": {
+                "api_base": api_base,
+                "configured_model": model_name,
+                "available_models": available_models[:5],  # 只返回前5个
+                "model_available": model_available,
+                "response_time": f"{elapsed}s"
+            }
+        }
+    except requests.exceptions.Timeout:
+        return {"success": False, "message": "连接超时", "details": {"api_base": api_base}}
+    except requests.exceptions.ConnectionError:
+        return {"success": False, "message": "无法连接到vLLM服务器", "details": {"api_base": api_base}}
+    except Exception as e:
+        return {"success": False, "message": f"测试失败: {str(e)}", "details": {}}
+
+
+@app.post("/api/test/aider")
+async def test_aider():
+    """测试Aider是否可用"""
+    try:
+        result = subprocess.run(
+            ["aider", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            version = result.stdout.strip() or result.stderr.strip()
+            # 提取版本号
+            version_match = re.search(r'[\d.]+', version)
+            version_str = version_match.group(0) if version_match else version[:50]
+            
+            return {
+                "success": True,
+                "message": "Aider 可用",
+                "details": {
+                    "version": version_str
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Aider 运行失败",
+                "details": {"error": result.stderr[:200] if result.stderr else "Unknown error"}
+            }
+    except FileNotFoundError:
+        return {"success": False, "message": "Aider 未安装", "details": {"hint": "请运行 pip install aider-chat"}}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "Aider 响应超时", "details": {}}
+    except Exception as e:
+        return {"success": False, "message": f"测试失败: {str(e)}", "details": {}}
+
+
 # ==================== Webhook处理 ====================
 
 @app.post("/webhook")
