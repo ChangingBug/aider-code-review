@@ -35,6 +35,7 @@ from database import init_database, get_db, get_db_session
 from models import ReviewRecord, ReviewIssue, ReviewStatus, ReviewStrategy, IssueSeverity
 from statistics import StatisticsService
 from settings import SettingsManager
+from polling import polling_manager, PollingRepo
 
 app = FastAPI(
     title="Aider Code Review Service",
@@ -368,6 +369,85 @@ async def test_aider():
         return {"success": False, "message": "Aider 响应超时", "details": {}}
     except Exception as e:
         return {"success": False, "message": f"测试失败: {str(e)}", "details": {}}
+
+
+# ==================== 轮询管理API ====================
+
+@app.get("/api/polling/status")
+async def get_polling_status():
+    """获取轮询状态"""
+    return polling_manager.get_status()
+
+
+@app.post("/api/polling/start")
+async def start_polling():
+    """启动轮询"""
+    # 设置审查回调
+    polling_manager.set_review_callback(run_aider_review)
+    polling_manager.start()
+    return {"status": "started", "message": "轮询已启动"}
+
+
+@app.post("/api/polling/stop")
+async def stop_polling():
+    """停止轮询"""
+    polling_manager.stop()
+    return {"status": "stopped", "message": "轮询已停止"}
+
+
+@app.get("/api/polling/repos")
+async def get_polling_repos():
+    """获取轮询仓库列表"""
+    return {"repos": polling_manager.get_repos()}
+
+
+@app.post("/api/polling/repos")
+async def add_polling_repo(request: Request):
+    """添加轮询仓库"""
+    data = await request.json()
+    
+    # 生成唯一ID
+    import uuid
+    repo_id = str(uuid.uuid4())[:8]
+    
+    repo = PollingRepo(
+        id=repo_id,
+        name=data.get('name', '未命名仓库'),
+        url=data.get('url', ''),
+        branch=data.get('branch', 'main'),
+        strategy=data.get('strategy', 'commit'),
+        poll_commits=data.get('poll_commits', True),
+        poll_mrs=data.get('poll_mrs', False),
+        enabled=data.get('enabled', True),
+    )
+    
+    if not repo.url:
+        raise HTTPException(status_code=400, detail="仓库URL不能为空")
+    
+    polling_manager.add_repo(repo)
+    return {"status": "added", "repo": repo.to_dict()}
+
+
+@app.put("/api/polling/repos/{repo_id}")
+async def update_polling_repo(repo_id: str, request: Request):
+    """更新轮询仓库"""
+    data = await request.json()
+    
+    success = polling_manager.update_repo(repo_id, data)
+    if success:
+        return {"status": "updated", "repo": polling_manager.get_repo(repo_id)}
+    else:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+
+
+@app.delete("/api/polling/repos/{repo_id}")
+async def delete_polling_repo(repo_id: str):
+    """删除轮询仓库"""
+    success = polling_manager.remove_repo(repo_id)
+    if success:
+        return {"status": "deleted", "repo_id": repo_id}
+    else:
+        raise HTTPException(status_code=404, detail="仓库不存在")
 
 
 # ==================== Webhook处理 ====================

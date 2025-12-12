@@ -527,6 +527,12 @@ async function loadSettings() {
             input.value = setting.value || '';
         }
     });
+
+    // 加载轮询数据
+    loadPollingData();
+
+    // 根据触发模式显示/隐藏轮询仓库区域
+    togglePollingUI();
 }
 
 async function saveSettings(e) {
@@ -549,6 +555,10 @@ async function saveSettings(e) {
     // 复选框（checkbox未选中时不会出现在FormData中）
     settings['enable_comment'] = form.querySelector('[name="enable_comment"]').checked ? 'true' : 'false';
     settings['aider_no_repo_map'] = form.querySelector('[name="aider_no_repo_map"]').checked ? 'true' : 'false';
+
+    // 轮询配置
+    settings['trigger_mode'] = formData.get('trigger_mode') || 'webhook';
+    settings['polling_interval'] = formData.get('polling_interval') || '5';
 
     // 发送保存请求
     try {
@@ -649,6 +659,194 @@ async function testAider() {
         resultEl.className = 'test-result error';
         resultEl.textContent = `✗ 请求失败: ${error.message}`;
     }
+}
+
+// ==================== 轮询管理 ====================
+
+// 加载轮询状态和仓库列表
+async function loadPollingData() {
+    try {
+        // 加载状态
+        const statusRes = await fetch('/api/polling/status');
+        const status = await statusRes.json();
+        updatePollingStatusUI(status);
+
+        // 加载仓库列表
+        const reposRes = await fetch('/api/polling/repos');
+        const data = await reposRes.json();
+        renderReposList(data.repos || []);
+    } catch (error) {
+        console.error('加载轮询数据失败:', error);
+    }
+}
+
+// 更新轮询状态UI
+function updatePollingStatusUI(status) {
+    const btn = document.getElementById('polling-toggle-btn');
+    const statusEl = document.getElementById('polling-status');
+
+    if (status.running) {
+        btn.textContent = '⏹️ 停止轮询';
+        btn.classList.add('btn-danger');
+        statusEl.className = 'test-result success';
+        statusEl.textContent = `✓ 运行中 (${status.enabled_repos}/${status.repos_count} 个仓库, 每${status.interval}分钟)`;
+    } else {
+        btn.textContent = '▶️ 启动轮询';
+        btn.classList.remove('btn-danger');
+        statusEl.className = 'test-result';
+        statusEl.textContent = status.repos_count > 0 ? `已配置 ${status.repos_count} 个仓库` : '';
+    }
+}
+
+// 渲染仓库列表
+function renderReposList(repos) {
+    const container = document.getElementById('repos-list');
+
+    if (repos.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                <p>暂无监控仓库</p>
+                <p style="font-size: 12px;">点击"添加仓库"开始配置</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = repos.map(repo => `
+        <div class="repo-item" data-id="${repo.id}">
+            <div class="repo-info">
+                <div class="repo-name">${repo.name}</div>
+                <div class="repo-url">${repo.url}</div>
+                <div class="repo-meta">
+                    分支: ${repo.branch} | 
+                    ${repo.poll_commits ? '✓提交' : ''} 
+                    ${repo.poll_mrs ? '✓MR' : ''} |
+                    ${repo.enabled ? '🟢启用' : '🔴禁用'}
+                </div>
+            </div>
+            <div class="repo-actions">
+                <button class="btn btn-test btn-sm" onclick="toggleRepoEnabled('${repo.id}', ${!repo.enabled})">
+                    ${repo.enabled ? '禁用' : '启用'}
+                </button>
+                <button class="btn btn-test btn-sm btn-danger" onclick="deleteRepo('${repo.id}')">
+                    删除
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 显示添加仓库模态框
+function showAddRepoModal() {
+    document.getElementById('add-repo-modal').classList.add('active');
+}
+
+// 关闭添加仓库模态框
+function closeAddRepoModal() {
+    document.getElementById('add-repo-modal').classList.remove('active');
+    // 清空表单
+    document.getElementById('new-repo-name').value = '';
+    document.getElementById('new-repo-url').value = '';
+    document.getElementById('new-repo-branch').value = 'main';
+    document.getElementById('new-repo-commits').checked = true;
+    document.getElementById('new-repo-mrs').checked = false;
+}
+
+// 添加仓库
+async function addRepo() {
+    const name = document.getElementById('new-repo-name').value.trim();
+    const url = document.getElementById('new-repo-url').value.trim();
+    const branch = document.getElementById('new-repo-branch').value.trim() || 'main';
+    const pollCommits = document.getElementById('new-repo-commits').checked;
+    const pollMrs = document.getElementById('new-repo-mrs').checked;
+
+    if (!url) {
+        alert('请输入仓库URL');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/polling/repos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: name || url.split('/').pop().replace('.git', ''),
+                url,
+                branch,
+                poll_commits: pollCommits,
+                poll_mrs: pollMrs
+            })
+        });
+
+        if (response.ok) {
+            closeAddRepoModal();
+            loadPollingData();
+        } else {
+            const error = await response.json();
+            alert('添加失败: ' + (error.detail || '未知错误'));
+        }
+    } catch (error) {
+        alert('添加失败: ' + error.message);
+    }
+}
+
+// 删除仓库
+async function deleteRepo(repoId) {
+    if (!confirm('确定要删除这个仓库吗？')) return;
+
+    try {
+        const response = await fetch(`/api/polling/repos/${repoId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            loadPollingData();
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+    }
+}
+
+// 切换仓库启用状态
+async function toggleRepoEnabled(repoId, enabled) {
+    try {
+        const response = await fetch(`/api/polling/repos/${repoId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+
+        if (response.ok) {
+            loadPollingData();
+        }
+    } catch (error) {
+        console.error('更新失败:', error);
+    }
+}
+
+// 切换轮询开关
+async function togglePolling() {
+    const btn = document.getElementById('polling-toggle-btn');
+    const isRunning = btn.textContent.includes('停止');
+
+    try {
+        const endpoint = isRunning ? '/api/polling/stop' : '/api/polling/start';
+        const response = await fetch(endpoint, { method: 'POST' });
+
+        if (response.ok) {
+            // 重新加载状态
+            setTimeout(loadPollingData, 500);
+        }
+    } catch (error) {
+        console.error('操作失败:', error);
+    }
+}
+
+// 切换轮询UI显示
+function togglePollingUI() {
+    const mode = document.querySelector('[name="trigger_mode"]').value;
+    const section = document.getElementById('polling-repos-section');
+    section.style.display = mode === 'polling' ? 'block' : 'none';
 }
 
 // ==================== 初始化 ====================

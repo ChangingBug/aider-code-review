@@ -1,0 +1,358 @@
+"""
+轮询管理器模块
+定时轮询 Git 仓库，检查新提交和 MR，自动触发代码审查
+"""
+import threading
+import time
+import json
+import re
+from datetime import datetime
+from typing import Dict, List, Optional, Callable
+from dataclasses import dataclass, asdict
+import requests
+
+from settings import SettingsManager
+from utils import logger
+
+
+@dataclass
+class PollingRepo:
+    """轮询仓库配置"""
+    id: str
+    name: str
+    url: str                    # 仓库URL (HTTP格式)
+    branch: str = "main"        # 监控的分支
+    strategy: str = "commit"    # 审查策略: commit / mr
+    poll_commits: bool = True   # 是否轮询新提交
+    poll_mrs: bool = False      # 是否轮询新MR
+    last_commit_id: str = ""    # 上次检查的commit ID
+    last_mr_id: int = 0         # 上次检查的MR ID
+    last_check_time: str = ""   # 上次检查时间
+    enabled: bool = True        # 是否启用
+    
+    def to_dict(self):
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+
+class PollingManager:
+    """轮询任务管理器"""
+    
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        
+        self._initialized = True
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._repos: Dict[str, PollingRepo] = {}
+        self._review_callback: Optional[Callable] = None
+        self._load_repos()
+    
+    def set_review_callback(self, callback: Callable):
+        """设置审查回调函数"""
+        self._review_callback = callback
+    
+    def _load_repos(self):
+        """从数据库加载仓库配置"""
+        repos_json = SettingsManager.get('polling_repos', '[]')
+        try:
+            repos_list = json.loads(repos_json)
+            self._repos = {r['id']: PollingRepo.from_dict(r) for r in repos_list}
+        except (json.JSONDecodeError, KeyError):
+            self._repos = {}
+    
+    def _save_repos(self):
+        """保存仓库配置到数据库"""
+        repos_list = [r.to_dict() for r in self._repos.values()]
+        SettingsManager.set('polling_repos', json.dumps(repos_list, ensure_ascii=False))
+    
+    def add_repo(self, repo: PollingRepo) -> bool:
+        """添加仓库"""
+        self._repos[repo.id] = repo
+        self._save_repos()
+        logger.info(f"添加轮询仓库: {repo.name} ({repo.url})")
+        return True
+    
+    def remove_repo(self, repo_id: str) -> bool:
+        """删除仓库"""
+        if repo_id in self._repos:
+            repo = self._repos.pop(repo_id)
+            self._save_repos()
+            logger.info(f"删除轮询仓库: {repo.name}")
+            return True
+        return False
+    
+    def update_repo(self, repo_id: str, updates: dict) -> bool:
+        """更新仓库配置"""
+        if repo_id in self._repos:
+            repo = self._repos[repo_id]
+            for key, value in updates.items():
+                if hasattr(repo, key):
+                    setattr(repo, key, value)
+            self._save_repos()
+            return True
+        return False
+    
+    def get_repos(self) -> List[dict]:
+        """获取所有仓库"""
+        return [r.to_dict() for r in self._repos.values()]
+    
+    def get_repo(self, repo_id: str) -> Optional[dict]:
+        """获取单个仓库"""
+        if repo_id in self._repos:
+            return self._repos[repo_id].to_dict()
+        return None
+    
+    @property
+    def is_running(self) -> bool:
+        return self._running
+    
+    def start(self):
+        """启动轮询"""
+        if self._running:
+            logger.warning("轮询已在运行中")
+            return
+        
+        self._running = True
+        self._thread = threading.Thread(target=self._polling_loop, daemon=True)
+        self._thread.start()
+        logger.info("轮询任务已启动")
+    
+    def stop(self):
+        """停止轮询"""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+        logger.info("轮询任务已停止")
+    
+    def _polling_loop(self):
+        """轮询主循环"""
+        while self._running:
+            try:
+                interval = SettingsManager.get_int('polling_interval', 5)
+                
+                # 检查所有启用的仓库
+                for repo_id, repo in list(self._repos.items()):
+                    if not self._running:
+                        break
+                    if not repo.enabled:
+                        continue
+                    
+                    try:
+                        self._check_repo(repo)
+                    except Exception as e:
+                        logger.error(f"检查仓库 {repo.name} 失败: {e}")
+                
+                # 等待下一次轮询
+                for _ in range(interval * 60):
+                    if not self._running:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"轮询循环异常: {e}")
+                time.sleep(10)
+    
+    def _check_repo(self, repo: PollingRepo):
+        """检查单个仓库的新提交/MR"""
+        settings = SettingsManager.get_all()
+        platform = settings.get('git_platform', 'gitlab')
+        api_url = settings.get('git_api_url', '')
+        token = settings.get('git_token', '')
+        
+        if not api_url or not token:
+            logger.warning(f"Git API未配置，跳过仓库 {repo.name}")
+            return
+        
+        # 从URL提取项目路径
+        project_path = self._extract_project_path(repo.url, platform)
+        if not project_path:
+            logger.warning(f"无法解析仓库路径: {repo.url}")
+            return
+        
+        # 检查新提交
+        if repo.poll_commits:
+            new_commits = self._get_new_commits(platform, api_url, token, project_path, repo.branch, repo.last_commit_id)
+            if new_commits:
+                logger.info(f"仓库 {repo.name} 发现 {len(new_commits)} 个新提交")
+                for commit in new_commits:
+                    self._trigger_review(repo, 'commit', commit)
+                # 更新最后检查的commit
+                repo.last_commit_id = new_commits[0]['id']
+        
+        # 检查新MR
+        if repo.poll_mrs:
+            new_mrs = self._get_new_mrs(platform, api_url, token, project_path, repo.last_mr_id)
+            if new_mrs:
+                logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
+                for mr in new_mrs:
+                    self._trigger_review(repo, 'merge_request', mr)
+                # 更新最后检查的MR
+                repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
+        
+        # 更新检查时间
+        repo.last_check_time = datetime.utcnow().isoformat()
+        self._save_repos()
+    
+    def _extract_project_path(self, url: str, platform: str) -> Optional[str]:
+        """从URL提取项目路径"""
+        # SSH格式: git@host:group/project.git
+        ssh_match = re.match(r'git@[^:]+:(.+?)(?:\.git)?$', url)
+        if ssh_match:
+            return ssh_match.group(1)
+        
+        # HTTP格式: http(s)://host/group/project.git
+        http_match = re.match(r'https?://[^/]+/(.+?)(?:\.git)?$', url)
+        if http_match:
+            return http_match.group(1)
+        
+        return None
+    
+    def _get_new_commits(self, platform: str, api_url: str, token: str, 
+                         project_path: str, branch: str, last_commit_id: str) -> List[dict]:
+        """获取新提交"""
+        try:
+            from urllib.parse import quote
+            encoded_path = quote(project_path, safe='')
+            
+            if platform == 'gitlab':
+                url = f"{api_url}/projects/{encoded_path}/repository/commits"
+                headers = {"PRIVATE-TOKEN": token}
+                params = {"ref_name": branch, "per_page": 10}
+            elif platform == 'gitea':
+                url = f"{api_url}/repos/{project_path}/commits"
+                headers = {"Authorization": f"token {token}"}
+                params = {"sha": branch, "limit": 10}
+            elif platform == 'github':
+                url = f"{api_url}/repos/{project_path}/commits"
+                headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+                params = {"sha": branch, "per_page": 10}
+            else:
+                return []
+            
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            commits = response.json()
+            
+            # 过滤出新提交
+            new_commits = []
+            for commit in commits:
+                commit_id = commit.get('id') or commit.get('sha')
+                if commit_id == last_commit_id:
+                    break
+                new_commits.append({
+                    'id': commit_id,
+                    'message': commit.get('message') or commit.get('commit', {}).get('message', ''),
+                    'author': commit.get('author_name') or commit.get('commit', {}).get('author', {}).get('name', ''),
+                })
+            
+            return new_commits
+            
+        except Exception as e:
+            logger.error(f"获取提交列表失败: {e}")
+            return []
+    
+    def _get_new_mrs(self, platform: str, api_url: str, token: str,
+                     project_path: str, last_mr_id: int) -> List[dict]:
+        """获取新MR"""
+        try:
+            from urllib.parse import quote
+            encoded_path = quote(project_path, safe='')
+            
+            if platform == 'gitlab':
+                url = f"{api_url}/projects/{encoded_path}/merge_requests"
+                headers = {"PRIVATE-TOKEN": token}
+                params = {"state": "opened", "per_page": 10}
+            elif platform == 'gitea':
+                url = f"{api_url}/repos/{project_path}/pulls"
+                headers = {"Authorization": f"token {token}"}
+                params = {"state": "open", "limit": 10}
+            elif platform == 'github':
+                url = f"{api_url}/repos/{project_path}/pulls"
+                headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+                params = {"state": "open", "per_page": 10}
+            else:
+                return []
+            
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            mrs = response.json()
+            
+            # 过滤出新MR
+            new_mrs = []
+            for mr in mrs:
+                mr_iid = mr.get('iid') or mr.get('number')
+                if mr_iid and mr_iid > last_mr_id:
+                    new_mrs.append({
+                        'iid': mr_iid,
+                        'title': mr.get('title', ''),
+                        'source_branch': mr.get('source_branch') or mr.get('head', {}).get('ref', ''),
+                        'target_branch': mr.get('target_branch') or mr.get('base', {}).get('ref', ''),
+                    })
+            
+            return new_mrs
+            
+        except Exception as e:
+            logger.error(f"获取MR列表失败: {e}")
+            return []
+    
+    def _trigger_review(self, repo: PollingRepo, strategy: str, item: dict):
+        """触发代码审查"""
+        if not self._review_callback:
+            logger.warning("未设置审查回调函数")
+            return
+        
+        settings = SettingsManager.get_all()
+        platform = settings.get('git_platform', 'gitlab')
+        project_path = self._extract_project_path(repo.url, platform)
+        
+        context = {
+            'strategy': strategy,
+            'platform': platform,
+            'project_id': project_path,
+            'project_name': repo.name,
+            'author_name': item.get('author', 'Polling'),
+            'author_email': '',
+        }
+        
+        if strategy == 'commit':
+            context['commit_id'] = item['id']
+            logger.info(f"触发Commit审查: {repo.name} - {item['id'][:8]}")
+        else:
+            context['mr_iid'] = item['iid']
+            context['target_branch'] = item['target_branch']
+            logger.info(f"触发MR审查: {repo.name} - MR#{item['iid']}")
+        
+        try:
+            self._review_callback(repo.url, repo.branch, strategy, context)
+        except Exception as e:
+            logger.error(f"触发审查失败: {e}")
+    
+    def get_status(self) -> dict:
+        """获取轮询状态"""
+        return {
+            "running": self._running,
+            "repos_count": len(self._repos),
+            "enabled_repos": sum(1 for r in self._repos.values() if r.enabled),
+            "interval": SettingsManager.get_int('polling_interval', 5),
+        }
+
+
+# 全局实例
+polling_manager = PollingManager()

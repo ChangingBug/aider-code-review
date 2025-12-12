@@ -45,6 +45,11 @@ DEFAULT_SETTINGS = {
     # Aider 配置
     "aider_map_tokens": {"value": "262144", "category": "aider", "description": "RepoMap Token数量"},
     "aider_no_repo_map": {"value": "false", "category": "aider", "description": "是否禁用RepoMap"},
+    
+    # 轮询配置
+    "trigger_mode": {"value": "webhook", "category": "polling", "description": "触发模式 (webhook/polling)"},
+    "polling_interval": {"value": "5", "category": "polling", "description": "轮询间隔(分钟)"},
+    "polling_repos": {"value": "[]", "category": "polling", "description": "轮询仓库列表(JSON)"},
 }
 
 

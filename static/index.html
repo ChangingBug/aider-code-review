@@ -362,6 +362,49 @@
                         </div>
                     </div>
 
+                    <!-- 轮询配置 -->
+                    <div class="settings-card">
+                        <h3 class="settings-title">🔄 触发模式配置</h3>
+                        <div class="settings-grid">
+                            <div class="form-group">
+                                <label>触发模式</label>
+                                <select name="trigger_mode" class="form-input" onchange="togglePollingUI()">
+                                    <option value="webhook">Webhook (推送触发)</option>
+                                    <option value="polling">轮询 (定时检查)</option>
+                                </select>
+                                <small class="form-hint">Webhook需要Git平台支持，轮询主动检查仓库</small>
+                            </div>
+                            <div class="form-group">
+                                <label>轮询间隔(分钟)</label>
+                                <input type="number" name="polling_interval" class="form-input" placeholder="5" min="1"
+                                    max="60">
+                            </div>
+                        </div>
+
+                        <!-- 轮询仓库管理 -->
+                        <div id="polling-repos-section" style="margin-top: 20px;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h4 style="margin: 0; color: var(--text-secondary);">📦 监控仓库列表</h4>
+                                <button type="button" class="btn btn-test" onclick="showAddRepoModal()">
+                                    ➕ 添加仓库
+                                </button>
+                            </div>
+                            <div id="repos-list" class="repos-list">
+                                <!-- 仓库列表将通过JS动态渲染 -->
+                            </div>
+                        </div>
+
+                        <!-- 轮询控制 -->
+                        <div class="form-group full-width" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" id="polling-toggle-btn"
+                                onclick="togglePolling()">
+                                ▶️ 启动轮询
+                            </button>
+                            <span id="polling-status" class="test-result"></span>
+                        </div>
+                    </div>
+
                     <div class="settings-actions">
                         <button type="submit" class="btn btn-primary">💾 保存设置</button>
                         <span id="settings-status" class="settings-status"></span>
@@ -369,6 +412,49 @@
                 </form>
             </div>
         </main>
+    </div>
+
+    <!-- 添加仓库模态框 -->
+    <div class="modal-overlay" id="add-repo-modal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">添加监控仓库</h3>
+                <button class="modal-close" onclick="closeAddRepoModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>仓库名称</label>
+                    <input type="text" id="new-repo-name" class="form-input" placeholder="如: my-project">
+                </div>
+                <div class="form-group">
+                    <label>仓库URL</label>
+                    <input type="text" id="new-repo-url" class="form-input"
+                        placeholder="http://code.example.com/group/project.git">
+                </div>
+                <div class="form-group">
+                    <label>监控分支</label>
+                    <input type="text" id="new-repo-branch" class="form-input" placeholder="main" value="main">
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
+                        <span class="toggle-switch"></span>
+                        <span>轮询新提交</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="new-repo-mrs" class="toggle-input">
+                        <span class="toggle-switch"></span>
+                        <span>轮询新MR</span>
+                    </label>
+                </div>
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" class="btn btn-test" onclick="closeAddRepoModal()">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="addRepo()">添加</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 审查详情模态框 -->

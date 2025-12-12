@@ -864,3 +864,65 @@ body {
     margin-top: 4px;
     padding-left: 28px;
 }
+
+/* 仓库列表 */
+.repos-list {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.repo-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.repo-item:last-child {
+    border-bottom: none;
+}
+
+.repo-info {
+    flex: 1;
+}
+
+.repo-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.repo-url {
+    font-size: 12px;
+    color: var(--text-muted);
+    word-break: break-all;
+}
+
+.repo-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.repo-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
