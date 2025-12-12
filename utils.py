@@ -198,3 +198,30 @@ def convert_to_http_auth_url(repo_url: str, http_user: str, http_password: str, 
     logger.warning(f"无法解析仓库URL格式: {repo_url}")
     return repo_url
 
+
+def build_git_auth(platform: str, token: str = '', http_user: str = '', http_password: str = '') -> dict:
+    """
+    构建Git API认证信息
+    
+    优先使用API Token，如果没有则使用HTTP Basic认证
+    
+    Returns:
+        {"headers": dict, "auth": tuple or None}
+    """
+    headers = {}
+    auth = None
+    
+    if token:
+        # 使用API Token认证
+        if platform == 'gitlab':
+            headers["PRIVATE-TOKEN"] = token
+        elif platform == 'gitea':
+            headers["Authorization"] = f"token {token}"
+        elif platform == 'github':
+            headers["Authorization"] = f"token {token}"
+            headers["Accept"] = "application/vnd.github.v3+json"
+    elif http_user and http_password:
+        # 使用HTTP Basic认证
+        auth = (http_user, http_password)
+    
+    return {"headers": headers, "auth": auth}

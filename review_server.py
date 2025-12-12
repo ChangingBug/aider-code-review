@@ -29,7 +29,8 @@ from utils import (
     get_commit_prompt,
     get_mr_prompt,
     sanitize_branch_name,
-    convert_to_http_auth_url
+    convert_to_http_auth_url,
+    build_git_auth
 )
 from database import init_database, get_db, get_db_session
 from models import ReviewRecord, ReviewIssue, ReviewStatus, ReviewStrategy, IssueSeverity
@@ -922,85 +923,118 @@ def post_comment_to_git(context: dict, report: str):
     """回写评论到Git平台"""
     platform = context.get('platform', 'gitlab')
     
+    # 获取认证信息
+    settings = SettingsManager.get_all()
+    token = settings.get('git_token', '')
+    http_user = settings.get('git_http_user', '')
+    http_password = settings.get('git_http_password', '')
+    api_url = settings.get('git_api_url', '')
+    
+    if not api_url:
+        logger.warning("未配置Git API地址，无法回写评论")
+        return
+    
+    # 构建认证信息
+    auth_info = build_git_auth(platform, token, http_user, http_password)
+    
+    if not auth_info['headers'] and not auth_info['auth']:
+        logger.warning("未配置认证信息（Token或HTTP用户名/密码），无法回写评论")
+        return
+    
     try:
         if platform == "gitlab":
-            post_gitlab_comment(context, report)
+            post_gitlab_comment(context, report, api_url, auth_info)
         elif platform == "gitea":
-            post_gitea_comment(context, report)
+            post_gitea_comment(context, report, api_url, auth_info)
         elif platform == "github":
-            post_github_comment(context, report)
+            post_github_comment(context, report, api_url, auth_info)
         else:
             logger.warning(f"不支持的Git平台: {platform}")
     except Exception as e:
         logger.exception(f"回写评论失败: {e}")
 
 
-def post_gitlab_comment(context: dict, report: str):
+def post_gitlab_comment(context: dict, report: str, api_url: str, auth_info: dict):
     """发送GitLab评论"""
-    # 使用动态配置
-    git_token = SettingsManager.get('git_token', config.git.token)
-    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    from urllib.parse import quote
     
-    if not git_token:
-        logger.warning("未配置Git Token，无法发送评论")
-        return
-    
-    headers = {"PRIVATE-TOKEN": git_token}
+    # GitLab需要URL编码的project_id
+    project_id = quote(context.get('project_id', ''), safe='')
     
     if context['strategy'] == 'merge_request':
-        url = f"{git_api_url}/projects/{context['project_id']}/merge_requests/{context['mr_iid']}/notes"
-        response = requests.post(url, headers=headers, json={"body": report})
+        url = f"{api_url}/projects/{project_id}/merge_requests/{context['mr_iid']}/notes"
+        response = requests.post(
+            url, 
+            headers=auth_info['headers'], 
+            auth=auth_info['auth'],
+            json={"body": report}
+        )
         response.raise_for_status()
         logger.info(f"评论已发送到GitLab MR#{context['mr_iid']}")
     else:
-        url = f"{git_api_url}/projects/{context['project_id']}/repository/commits/{context['commit_id']}/comments"
-        response = requests.post(url, headers=headers, json={"note": report})
+        url = f"{api_url}/projects/{project_id}/repository/commits/{context['commit_id']}/comments"
+        response = requests.post(
+            url, 
+            headers=auth_info['headers'],
+            auth=auth_info['auth'],
+            json={"note": report}
+        )
         response.raise_for_status()
         logger.info(f"评论已发送到GitLab Commit {context['commit_id'][:8]}")
 
 
-def post_gitea_comment(context: dict, report: str):
+def post_gitea_comment(context: dict, report: str, api_url: str, auth_info: dict):
     """发送Gitea评论"""
-    git_token = SettingsManager.get('git_token', config.git.token)
-    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    repo_owner = context.get('repo_owner', '')
+    repo_name = context.get('repo_name', '')
     
-    if not git_token:
-        logger.warning("未配置Git Token，无法发送评论")
+    if not repo_owner or not repo_name:
+        logger.warning("缺少repo_owner或repo_name，无法发送Gitea评论")
         return
     
-    headers = {"Authorization": f"token {git_token}"}
-    
     if context['strategy'] == 'merge_request':
-        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
-        response = requests.post(url, headers=headers, json={"body": report})
+        pr_number = context.get('pr_number', context.get('mr_iid'))
+        url = f"{api_url}/repos/{repo_owner}/{repo_name}/issues/{pr_number}/comments"
+        response = requests.post(
+            url, 
+            headers=auth_info['headers'],
+            auth=auth_info['auth'],
+            json={"body": report}
+        )
         response.raise_for_status()
-        logger.info(f"评论已发送到Gitea PR#{context['pr_number']}")
+        logger.info(f"评论已发送到Gitea PR#{pr_number}")
     else:
         logger.warning("Gitea暂不支持Commit评论")
 
 
-def post_github_comment(context: dict, report: str):
+def post_github_comment(context: dict, report: str, api_url: str, auth_info: dict):
     """发送GitHub评论"""
-    git_token = SettingsManager.get('git_token', config.git.token)
-    git_api_url = SettingsManager.get('git_api_url', config.git.api_url)
+    repo_owner = context.get('repo_owner', '')
+    repo_name = context.get('repo_name', '')
     
-    if not git_token:
-        logger.warning("未配置Git Token，无法发送评论")
+    if not repo_owner or not repo_name:
+        logger.warning("缺少repo_owner或repo_name，无法发送GitHub评论")
         return
     
-    headers = {
-        "Authorization": f"token {git_token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    
     if context['strategy'] == 'merge_request':
-        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/issues/{context['pr_number']}/comments"
-        response = requests.post(url, headers=headers, json={"body": report})
+        pr_number = context.get('pr_number', context.get('mr_iid'))
+        url = f"{api_url}/repos/{repo_owner}/{repo_name}/issues/{pr_number}/comments"
+        response = requests.post(
+            url, 
+            headers=auth_info['headers'],
+            auth=auth_info['auth'],
+            json={"body": report}
+        )
         response.raise_for_status()
-        logger.info(f"评论已发送到GitHub PR#{context['pr_number']}")
+        logger.info(f"评论已发送到GitHub PR#{pr_number}")
     else:
-        url = f"{git_api_url}/repos/{context['repo_owner']}/{context['repo_name']}/commits/{context['commit_id']}/comments"
-        response = requests.post(url, headers=headers, json={"body": report})
+        url = f"{api_url}/repos/{repo_owner}/{repo_name}/commits/{context['commit_id']}/comments"
+        response = requests.post(
+            url, 
+            headers=auth_info['headers'],
+            auth=auth_info['auth'],
+            json={"body": report}
+        )
         response.raise_for_status()
         logger.info(f"评论已发送到GitHub Commit {context['commit_id'][:8]}")
 

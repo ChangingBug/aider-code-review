@@ -373,6 +373,11 @@ class PollingManager:
         platform = settings.get('git_platform', 'gitlab')
         project_path = self._extract_project_path(repo.url, platform)
         
+        # 从project_path解析owner和repo_name (格式: owner/repo 或 group/subgroup/repo)
+        path_parts = project_path.split('/') if project_path else []
+        repo_owner = path_parts[0] if len(path_parts) >= 2 else ''
+        repo_name_parsed = path_parts[-1] if path_parts else repo.name
+        
         # 获取HTTP认证信息，转换为认证URL用于克隆
         git_http_user = settings.get('git_http_user', '')
         git_http_password = settings.get('git_http_password', '')
@@ -394,6 +399,8 @@ class PollingManager:
             'platform': platform,
             'project_id': project_path,
             'project_name': repo.name,
+            'repo_owner': repo_owner,
+            'repo_name': repo_name_parsed,
             'author_name': item.get('author', 'Polling'),
             'author_email': '',
         }
@@ -403,6 +410,7 @@ class PollingManager:
             logger.info(f"触发Commit审查: {repo.name} - {item['id'][:8]}")
         else:
             context['mr_iid'] = item['iid']
+            context['pr_number'] = item['iid']  # Gitea/GitHub 使用 pr_number
             context['target_branch'] = item['target_branch']
             logger.info(f"触发MR审查: {repo.name} - MR#{item['iid']}")
         
