@@ -283,7 +283,7 @@ async def test_git_connection():
 
 @app.post("/api/test/vllm")
 async def test_vllm_connection():
-    """测试vLLM模型连接"""
+    """测试vLLM模型连接 - 发送真实对话验证"""
     import time
     start_time = time.time()
     
@@ -295,42 +295,63 @@ async def test_vllm_connection():
     if not api_base:
         return {"success": False, "message": "vLLM API地址未配置", "details": {}}
     
+    if not model_name:
+        return {"success": False, "message": "模型名称未配置", "details": {}}
+    
     try:
-        # 尝试获取模型列表
-        url = f"{api_base}/models"
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        # 发送真实的对话请求验证模型
+        url = f"{api_base}/chat/completions"
+        headers = {
+            "Content-Type": "application/json"
+        }
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         
-        response = requests.get(url, headers=headers, timeout=30)  # 增加超时时间
+        # 构建简单的测试对话
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "user", "content": "Say 'Hello' in one word."}
+            ],
+            "max_tokens": 10,
+            "temperature": 0.1
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
-        models_data = response.json()
         
-        # 获取可用模型列表
-        available_models = []
-        if 'data' in models_data:
-            available_models = [m.get('id', '') for m in models_data['data']]
-        
+        result = response.json()
         elapsed = round(time.time() - start_time, 2)
         
-        # 检查配置的模型是否在列表中
-        model_available = any(model_name in m for m in available_models) if available_models else True
+        # 提取模型回复
+        reply = ""
+        if 'choices' in result and len(result['choices']) > 0:
+            reply = result['choices'][0].get('message', {}).get('content', '')[:50]
         
         return {
             "success": True,
-            "message": "vLLM 连接成功",
+            "message": "模型对话成功",
             "details": {
                 "api_base": api_base,
-                "configured_model": model_name,
-                "available_models": available_models[:5],  # 只返回前5个
-                "model_available": model_available,
+                "model": model_name,
+                "reply": reply.strip(),
                 "response_time": f"{elapsed}s"
             }
         }
     except requests.exceptions.Timeout:
-        return {"success": False, "message": "连接超时", "details": {"api_base": api_base}}
+        elapsed = round(time.time() - start_time, 2)
+        return {"success": False, "message": f"模型响应超时 ({elapsed}s)", "details": {"api_base": api_base, "model": model_name}}
     except requests.exceptions.ConnectionError:
         return {"success": False, "message": "无法连接到vLLM服务器", "details": {"api_base": api_base}}
+    except requests.exceptions.HTTPError as e:
+        error_detail = ""
+        try:
+            error_detail = e.response.json().get('error', {}).get('message', str(e))[:100]
+        except:
+            error_detail = str(e)[:100]
+        return {"success": False, "message": f"请求失败: {error_detail}", "details": {"api_base": api_base, "model": model_name}}
     except Exception as e:
-        return {"success": False, "message": f"测试失败: {str(e)}", "details": {}}
+        return {"success": False, "message": f"测试失败: {str(e)[:100]}", "details": {}}
 
 
 @app.post("/api/test/aider")

@@ -619,7 +619,7 @@ async function testGitConnection() {
 async function testVllmConnection() {
     const resultEl = document.getElementById('vllm-test-result');
     resultEl.className = 'test-result loading';
-    resultEl.textContent = '⏳ 测试中...';
+    resultEl.textContent = '⏳ 正在与模型对话...';
 
     try {
         const response = await fetch('/api/test/vllm', { method: 'POST' });
@@ -627,8 +627,8 @@ async function testVllmConnection() {
 
         if (data.success) {
             resultEl.className = 'test-result success';
-            const models = data.details.available_models?.slice(0, 2).join(', ') || '-';
-            resultEl.textContent = `✓ ${data.message} (${data.details.response_time})`;
+            const reply = data.details.reply || '';
+            resultEl.textContent = `✓ ${data.message} (${data.details.response_time}) - "${reply}"`;
         } else {
             resultEl.className = 'test-result error';
             resultEl.textContent = `✗ ${data.message}`;
