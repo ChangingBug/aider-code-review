@@ -176,9 +176,16 @@ class PollingManager:
         api_url = settings.get('git_api_url', '')
         token = settings.get('git_token', '')
         
-        if not api_url or not token:
-            logger.warning(f"Git API未配置，跳过仓库 {repo.name}")
+        # 获取HTTP认证信息（作为API Token的备选）
+        http_user = settings.get('git_http_user', '')
+        http_password = settings.get('git_http_password', '')
+        
+        if not api_url:
+            logger.warning(f"Git API地址未配置，跳过仓库 {repo.name}")
             return
+        
+        # 构建认证信息：优先使用Token，否则使用HTTP Basic认证
+        auth_info = self._build_auth_info(platform, token, http_user, http_password)
         
         # 从URL提取项目路径
         project_path = self._extract_project_path(repo.url, platform)
@@ -188,7 +195,7 @@ class PollingManager:
         
         # 检查新提交
         if repo.poll_commits:
-            new_commits = self._get_new_commits(platform, api_url, token, project_path, repo.branch, repo.last_commit_id)
+            new_commits = self._get_new_commits(platform, api_url, auth_info, project_path, repo.branch, repo.last_commit_id)
             if new_commits:
                 # 首次轮询（last_commit_id为空）只记录最新commit，不触发审查
                 if not repo.last_commit_id:
@@ -203,7 +210,7 @@ class PollingManager:
         
         # 检查新MR
         if repo.poll_mrs:
-            new_mrs = self._get_new_mrs(platform, api_url, token, project_path, repo.last_mr_id)
+            new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id)
             if new_mrs:
                 # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
                 if repo.last_mr_id == 0:
@@ -221,6 +228,33 @@ class PollingManager:
         repo.last_check_time = datetime.utcnow().isoformat()
         self._save_repos()
     
+    def _build_auth_info(self, platform: str, token: str, http_user: str, http_password: str) -> dict:
+        """
+        构建认证信息
+        优先使用API Token，如果没有则使用HTTP Basic认证
+        返回: {"headers": {...}, "auth": (user, pass) or None}
+        """
+        headers = {}
+        auth = None
+        
+        if token:
+            # 使用API Token认证
+            if platform == 'gitlab':
+                headers["PRIVATE-TOKEN"] = token
+            elif platform == 'gitea':
+                headers["Authorization"] = f"token {token}"
+            elif platform == 'github':
+                headers["Authorization"] = f"token {token}"
+                headers["Accept"] = "application/vnd.github.v3+json"
+        elif http_user and http_password:
+            # 使用HTTP Basic认证
+            auth = (http_user, http_password)
+            logger.debug(f"使用HTTP Basic认证 (用户: {http_user})")
+        else:
+            logger.warning("未配置认证信息 (API Token 或 HTTP用户名/密码)")
+        
+        return {"headers": headers, "auth": auth}
+    
     def _extract_project_path(self, url: str, platform: str) -> Optional[str]:
         """从URL提取项目路径"""
         # SSH格式: git@host:group/project.git
@@ -235,7 +269,7 @@ class PollingManager:
         
         return None
     
-    def _get_new_commits(self, platform: str, api_url: str, token: str, 
+    def _get_new_commits(self, platform: str, api_url: str, auth_info: dict, 
                          project_path: str, branch: str, last_commit_id: str) -> List[dict]:
         """获取新提交"""
         try:
@@ -244,20 +278,23 @@ class PollingManager:
             
             if platform == 'gitlab':
                 url = f"{api_url}/projects/{encoded_path}/repository/commits"
-                headers = {"PRIVATE-TOKEN": token}
                 params = {"ref_name": branch, "per_page": 10}
             elif platform == 'gitea':
                 url = f"{api_url}/repos/{project_path}/commits"
-                headers = {"Authorization": f"token {token}"}
                 params = {"sha": branch, "limit": 10}
             elif platform == 'github':
                 url = f"{api_url}/repos/{project_path}/commits"
-                headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
                 params = {"sha": branch, "per_page": 10}
             else:
                 return []
             
-            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response = requests.get(
+                url, 
+                headers=auth_info.get('headers', {}),
+                auth=auth_info.get('auth'),
+                params=params, 
+                timeout=30
+            )
             response.raise_for_status()
             commits = response.json()
             
@@ -279,7 +316,7 @@ class PollingManager:
             logger.error(f"获取提交列表失败: {e}")
             return []
     
-    def _get_new_mrs(self, platform: str, api_url: str, token: str,
+    def _get_new_mrs(self, platform: str, api_url: str, auth_info: dict,
                      project_path: str, last_mr_id: int) -> List[dict]:
         """获取新MR"""
         try:
@@ -288,20 +325,23 @@ class PollingManager:
             
             if platform == 'gitlab':
                 url = f"{api_url}/projects/{encoded_path}/merge_requests"
-                headers = {"PRIVATE-TOKEN": token}
                 params = {"state": "opened", "per_page": 10}
             elif platform == 'gitea':
                 url = f"{api_url}/repos/{project_path}/pulls"
-                headers = {"Authorization": f"token {token}"}
                 params = {"state": "open", "limit": 10}
             elif platform == 'github':
                 url = f"{api_url}/repos/{project_path}/pulls"
-                headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
                 params = {"state": "open", "per_page": 10}
             else:
                 return []
             
-            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response = requests.get(
+                url, 
+                headers=auth_info.get('headers', {}),
+                auth=auth_info.get('auth'),
+                params=params, 
+                timeout=30
+            )
             response.raise_for_status()
             mrs = response.json()
             
