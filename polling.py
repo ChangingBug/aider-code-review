@@ -12,7 +12,7 @@ from dataclasses import dataclass, asdict
 import requests
 
 from settings import SettingsManager
-from utils import logger
+from utils import logger, convert_to_http_auth_url
 
 
 @dataclass
@@ -190,21 +190,32 @@ class PollingManager:
         if repo.poll_commits:
             new_commits = self._get_new_commits(platform, api_url, token, project_path, repo.branch, repo.last_commit_id)
             if new_commits:
-                logger.info(f"仓库 {repo.name} 发现 {len(new_commits)} 个新提交")
-                for commit in new_commits:
-                    self._trigger_review(repo, 'commit', commit)
-                # 更新最后检查的commit
-                repo.last_commit_id = new_commits[0]['id']
+                # 首次轮询（last_commit_id为空）只记录最新commit，不触发审查
+                if not repo.last_commit_id:
+                    logger.info(f"仓库 {repo.name} 首次轮询，记录最新commit: {new_commits[0]['id'][:8]}")
+                    repo.last_commit_id = new_commits[0]['id']
+                else:
+                    logger.info(f"仓库 {repo.name} 发现 {len(new_commits)} 个新提交")
+                    for commit in new_commits:
+                        self._trigger_review(repo, 'commit', commit)
+                    # 更新最后检查的commit
+                    repo.last_commit_id = new_commits[0]['id']
         
         # 检查新MR
         if repo.poll_mrs:
             new_mrs = self._get_new_mrs(platform, api_url, token, project_path, repo.last_mr_id)
             if new_mrs:
-                logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
-                for mr in new_mrs:
-                    self._trigger_review(repo, 'merge_request', mr)
-                # 更新最后检查的MR
-                repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
+                # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
+                if repo.last_mr_id == 0:
+                    max_mr_id = max(mr['iid'] for mr in new_mrs)
+                    logger.info(f"仓库 {repo.name} 首次轮询，记录最新MR ID: {max_mr_id}")
+                    repo.last_mr_id = max_mr_id
+                else:
+                    logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
+                    for mr in new_mrs:
+                        self._trigger_review(repo, 'merge_request', mr)
+                    # 更新最后检查的MR
+                    repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
         
         # 更新检查时间
         repo.last_check_time = datetime.utcnow().isoformat()
@@ -322,6 +333,22 @@ class PollingManager:
         platform = settings.get('git_platform', 'gitlab')
         project_path = self._extract_project_path(repo.url, platform)
         
+        # 获取HTTP认证信息，转换为认证URL用于克隆
+        git_http_user = settings.get('git_http_user', '')
+        git_http_password = settings.get('git_http_password', '')
+        git_server_url = settings.get('git_server_url', '')
+        
+        # 将仓库URL转换为带HTTP认证的URL
+        clone_url = repo.url
+        if git_http_user and git_http_password:
+            clone_url = convert_to_http_auth_url(
+                repo.url,
+                git_http_user,
+                git_http_password,
+                git_server_url
+            )
+            logger.debug(f"已转换为HTTP认证URL")
+        
         context = {
             'strategy': strategy,
             'platform': platform,
@@ -340,7 +367,8 @@ class PollingManager:
             logger.info(f"触发MR审查: {repo.name} - MR#{item['iid']}")
         
         try:
-            self._review_callback(repo.url, repo.branch, strategy, context)
+            # 使用已转换的HTTP认证URL调用审查
+            self._review_callback(clone_url, repo.branch, strategy, context)
         except Exception as e:
             logger.error(f"触发审查失败: {e}")
     
