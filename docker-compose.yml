@@ -7,6 +7,8 @@ services:
   aider-reviewer:
     image: aider-reviewer:latest
     container_name: aider-code-review
+    # Windows挂载Volume时需要root权限读取宿主机文件
+    user: root
     build:
       context: .
       dockerfile: Dockerfile

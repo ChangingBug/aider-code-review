@@ -44,9 +44,11 @@ mkdir -p "$PROJECT_DIR/data"
 
 # 启动容器
 # 注意：Git/vLLM/Aider相关配置已移至Web管理页面（/settings），无需在此配置
+# --user root: Windows挂载Volume时需要root权限读取宿主机文件
 docker run -d \
     --name ${CONTAINER_NAME} \
     --restart unless-stopped \
+    --user root \
     -p ${PORT}:5000 \
     -v "$PROJECT_DIR:/app:ro" \
     -v "$PROJECT_DIR/data:/app/data" \
