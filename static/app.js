@@ -592,10 +592,13 @@ async function testGitConnection() {
 
         if (data.success) {
             resultEl.className = 'test-result success';
-            resultEl.textContent = `✓ ${data.message} (${data.details.username})`;
+            // 显示所有检查结果
+            const checks = data.details.checks || [];
+            resultEl.textContent = checks.join(' | ');
         } else {
             resultEl.className = 'test-result error';
-            resultEl.textContent = `✗ ${data.message}`;
+            const checks = data.details.checks || [data.message];
+            resultEl.textContent = checks.join(' | ');
         }
     } catch (error) {
         resultEl.className = 'test-result error';
