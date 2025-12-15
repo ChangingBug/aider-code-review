@@ -478,6 +478,64 @@ async def delete_polling_repo(repo_id: str):
         raise HTTPException(status_code=404, detail="仓库不存在")
 
 
+@app.post("/api/polling/branches")
+async def get_repo_branches(request: Request):
+    """获取仓库分支列表"""
+    data = await request.json()
+    
+    branches = polling_manager.get_branches(
+        repo_url=data.get('url', ''),
+        platform=data.get('platform', 'gitlab'),
+        auth_type=data.get('auth_type', 'http_basic'),
+        token=data.get('token', ''),
+        http_user=data.get('http_user', ''),
+        http_password=data.get('http_password', '')
+    )
+    
+    return {"branches": branches}
+
+
+@app.post("/api/polling/repos/{repo_id}/clone")
+async def clone_repo(repo_id: str, background_tasks: BackgroundTasks):
+    """克隆仓库到本地"""
+    repo = polling_manager.get_repo(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+    
+    # 后台执行克隆
+    result = polling_manager.clone_repo(repo)
+    return result
+
+
+@app.post("/api/polling/parse-url")
+async def parse_repo_url(request: Request):
+    """解析仓库URL获取名称"""
+    data = await request.json()
+    url = data.get('url', '')
+    
+    # 从URL提取仓库名称
+    import re
+    
+    # SSH格式: git@host:group/project.git
+    ssh_match = re.match(r'git@[^:]+:(.+?)(?:\.git)?$', url)
+    if ssh_match:
+        path = ssh_match.group(1)
+        name = path.split('/')[-1]
+        return {"name": name, "path": path}
+    
+    # HTTP格式: http(s)://host/group/project.git
+    http_match = re.match(r'https?://[^/]+/(.+?)(?:\.git)?$', url)
+    if http_match:
+        path = http_match.group(1)
+        # 移除可能的用户名密码
+        if '@' in path:
+            path = path.split('@')[-1]
+        name = path.split('/')[-1]
+        return {"name": name, "path": path}
+    
+    return {"name": "", "path": ""}
+
+
 # ==================== Webhook处理 ====================
 
 @app.post("/webhook")

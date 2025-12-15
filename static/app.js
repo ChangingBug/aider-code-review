@@ -757,41 +757,183 @@ function closeAddRepoModal() {
     document.getElementById('new-repo-mrs').checked = false;
 }
 
+// 切换鉴权方式显示
+function toggleAuthFields() {
+    const authType = document.getElementById('new-repo-auth-type').value;
+    document.getElementById('http-auth-fields').style.display = authType === 'http_basic' ? 'grid' : 'none';
+    document.getElementById('token-auth-fields').style.display = authType === 'token' ? 'block' : 'none';
+}
+
+// URL变化时自动解析仓库名称
+let urlParseTimer = null;
+function onRepoUrlChange() {
+    const url = document.getElementById('new-repo-url').value.trim();
+    if (!url) return;
+
+    // 防抖
+    clearTimeout(urlParseTimer);
+    urlParseTimer = setTimeout(async () => {
+        try {
+            const response = await fetch('/api/polling/parse-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await response.json();
+            if (data.name) {
+                document.getElementById('new-repo-name').value = data.name;
+            }
+        } catch (e) {
+            console.error('解析URL失败:', e);
+        }
+    }, 500);
+}
+
+// 更新分支输入框
+function updateBranchInput() {
+    const select = document.getElementById('new-repo-branch-select');
+    const input = document.getElementById('new-repo-branch');
+    if (select.value) {
+        input.value = select.value;
+    }
+}
+
+// 加载分支列表
+async function loadBranches() {
+    const resultEl = document.getElementById('add-repo-result');
+    const btn = document.getElementById('load-branches-btn');
+    const select = document.getElementById('new-repo-branch-select');
+
+    const url = document.getElementById('new-repo-url').value.trim();
+    const platform = document.getElementById('new-repo-platform').value;
+    const authType = document.getElementById('new-repo-auth-type').value;
+    const token = document.getElementById('new-repo-token').value;
+    const httpUser = document.getElementById('new-repo-http-user').value;
+    const httpPassword = document.getElementById('new-repo-http-password').value;
+
+    if (!url) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '请先输入仓库URL';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '加载中...';
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 正在获取分支列表...';
+
+    try {
+        const response = await fetch('/api/polling/branches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url, platform, auth_type: authType,
+                token, http_user: httpUser, http_password: httpPassword
+            })
+        });
+        const data = await response.json();
+
+        select.innerHTML = '<option value="">-- 选择分支 --</option>';
+        if (data.branches && data.branches.length > 0) {
+            data.branches.forEach(branch => {
+                const option = document.createElement('option');
+                option.value = branch;
+                option.textContent = branch;
+                select.appendChild(option);
+            });
+            resultEl.className = 'test-result success';
+            resultEl.textContent = `✓ 加载了 ${data.branches.length} 个分支`;
+        } else {
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '未找到分支，请检查URL和认证信息';
+        }
+    } catch (e) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = `加载失败: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 加载';
+    }
+}
+
 // 添加仓库
 async function addRepo() {
+    const resultEl = document.getElementById('add-repo-result');
+
     const name = document.getElementById('new-repo-name').value.trim();
     const url = document.getElementById('new-repo-url').value.trim();
     const branch = document.getElementById('new-repo-branch').value.trim() || 'main';
+    const platform = document.getElementById('new-repo-platform').value;
+    const authType = document.getElementById('new-repo-auth-type').value;
+    const token = document.getElementById('new-repo-token').value;
+    const httpUser = document.getElementById('new-repo-http-user').value;
+    const httpPassword = document.getElementById('new-repo-http-password').value;
+    const localPath = document.getElementById('new-repo-local-path').value.trim();
     const pollCommits = document.getElementById('new-repo-commits').checked;
     const pollMrs = document.getElementById('new-repo-mrs').checked;
 
     if (!url) {
-        alert('请输入仓库URL');
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '请输入仓库URL';
         return;
     }
 
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 正在添加仓库...';
+
     try {
+        // 1. 添加仓库
         const response = await fetch('/api/polling/repos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: name || url.split('/').pop().replace('.git', ''),
-                url,
-                branch,
+                url, branch, platform,
+                auth_type: authType,
+                token, http_user: httpUser, http_password: httpPassword,
+                local_path: localPath,
                 poll_commits: pollCommits,
                 poll_mrs: pollMrs
             })
         });
 
-        if (response.ok) {
-            closeAddRepoModal();
-            loadPollingData();
-        } else {
+        if (!response.ok) {
             const error = await response.json();
-            alert('添加失败: ' + (error.detail || '未知错误'));
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '添加失败: ' + (error.detail || '未知错误');
+            return;
+        }
+
+        const repoData = await response.json();
+        const repoId = repoData.repo?.id;
+
+        resultEl.textContent = '⏳ 仓库已添加，正在克隆代码...';
+
+        // 2. 克隆仓库
+        if (repoId) {
+            const cloneResponse = await fetch(`/api/polling/repos/${repoId}/clone`, {
+                method: 'POST'
+            });
+            const cloneResult = await cloneResponse.json();
+
+            if (cloneResult.success) {
+                resultEl.className = 'test-result success';
+                resultEl.textContent = `✓ ${cloneResult.message}`;
+
+                // 延迟关闭
+                setTimeout(() => {
+                    closeAddRepoModal();
+                    loadPollingData();
+                }, 1500);
+            } else {
+                resultEl.className = 'test-result error';
+                resultEl.textContent = `仓库已添加，但克隆失败: ${cloneResult.message}`;
+                loadPollingData();
+            }
         }
     } catch (error) {
-        alert('添加失败: ' + error.message);
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '添加失败: ' + error.message;
     }
 }
 

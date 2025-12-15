@@ -20,18 +20,40 @@ class PollingRepo:
     """轮询仓库配置"""
     id: str
     name: str
-    url: str                    # 仓库URL (HTTP格式)
-    branch: str = "main"        # 监控的分支
-    strategy: str = "commit"    # 审查策略: commit / mr
-    poll_commits: bool = True   # 是否轮询新提交
-    poll_mrs: bool = False      # 是否轮询新MR
-    last_commit_id: str = ""    # 上次检查的commit ID
-    last_mr_id: int = 0         # 上次检查的MR ID
-    last_check_time: str = ""   # 上次检查时间
-    enabled: bool = True        # 是否启用
+    url: str                      # 仓库URL (HTTP格式)
+    branch: str = "main"          # 监控的分支
+    
+    # 平台和认证配置（仓库级别）
+    platform: str = "gitlab"      # Git平台类型: gitlab / gitea / github
+    auth_type: str = "http_basic" # 鉴权方式: token / http_basic
+    http_user: str = ""           # HTTP认证用户名
+    http_password: str = ""       # HTTP认证密码
+    token: str = ""               # API Token
+    
+    # 存储配置
+    local_path: str = ""          # 本地存储路径，默认 /app/repos/{name}/{branch}
+    
+    # 监控配置
+    strategy: str = "commit"      # 审查策略: commit / mr
+    poll_commits: bool = True     # 是否轮询新提交
+    poll_mrs: bool = False        # 是否轮询新MR
+    
+    # 状态信息
+    last_commit_id: str = ""      # 上次检查的commit ID
+    last_mr_id: int = 0           # 上次检查的MR ID
+    last_check_time: str = ""     # 上次检查时间
+    enabled: bool = True          # 是否启用
+    clone_status: str = ""        # 克隆状态: "" / cloning / cloned / error
     
     def to_dict(self):
         return asdict(self)
+    
+    def get_local_path(self) -> str:
+        """获取本地存储路径"""
+        if self.local_path:
+            return self.local_path
+        # 默认路径: /app/repos/{name}/{branch}
+        return f"/app/repos/{self.name}/{self.branch}"
     
     @classmethod
     def from_dict(cls, data: dict):
@@ -184,21 +206,24 @@ class PollingManager:
     
     def _check_repo(self, repo: PollingRepo):
         """检查单个仓库的新提交/MR"""
-        settings = SettingsManager.get_all()
-        platform = settings.get('git_platform', 'gitlab')
-        api_url = settings.get('git_api_url', '')
-        token = settings.get('git_token', '')
+        # 使用仓库级别的配置
+        platform = repo.platform
         
-        # 获取HTTP认证信息（作为API Token的备选）
-        http_user = settings.get('git_http_user', '')
-        http_password = settings.get('git_http_password', '')
+        # 从全局配置获取API URL（仍然使用全局）
+        settings = SettingsManager.get_all()
+        api_url = settings.get('git_api_url', '')
         
         if not api_url:
             logger.warning(f"Git API地址未配置，跳过仓库 {repo.name}")
             return
         
-        # 构建认证信息：优先使用Token，否则使用HTTP Basic认证
-        auth_info = self._build_auth_info(platform, token, http_user, http_password)
+        # 使用仓库级别的认证信息
+        auth_info = self._build_auth_info(
+            platform, 
+            repo.token,  # 仓库级Token
+            repo.http_user,  # 仓库级HTTP用户
+            repo.http_password  # 仓库级HTTP密码
+        )
         
         # 从URL提取项目路径
         project_path = self._extract_project_path(repo.url, platform)
@@ -382,8 +407,8 @@ class PollingManager:
             logger.warning("未设置审查回调函数")
             return
         
-        settings = SettingsManager.get_all()
-        platform = settings.get('git_platform', 'gitlab')
+        # 使用仓库级别的配置
+        platform = repo.platform
         project_path = self._extract_project_path(repo.url, platform)
         
         # 从project_path解析owner和repo_name (格式: owner/repo 或 group/subgroup/repo)
@@ -391,18 +416,16 @@ class PollingManager:
         repo_owner = path_parts[0] if len(path_parts) >= 2 else ''
         repo_name_parsed = path_parts[-1] if path_parts else repo.name
         
-        # 获取HTTP认证信息，转换为认证URL用于克隆
-        git_http_user = settings.get('git_http_user', '')
-        git_http_password = settings.get('git_http_password', '')
+        # 使用仓库级别的认证信息，转换为认证URL用于克隆
+        settings = SettingsManager.get_all()
         git_server_url = settings.get('git_server_url', '')
         
-        # 将仓库URL转换为带HTTP认证的URL
         clone_url = repo.url
-        if git_http_user and git_http_password:
+        if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
             clone_url = convert_to_http_auth_url(
                 repo.url,
-                git_http_user,
-                git_http_password,
+                repo.http_user,
+                repo.http_password,
                 git_server_url
             )
             logger.debug(f"已转换为HTTP认证URL")
@@ -416,6 +439,7 @@ class PollingManager:
             'repo_name': repo_name_parsed,
             'author_name': item.get('author', 'Polling'),
             'author_email': '',
+            'local_path': repo.get_local_path(),  # 使用仓库配置的存储路径
         }
         
         if strategy == 'commit':
@@ -441,6 +465,114 @@ class PollingManager:
             "enabled_repos": sum(1 for r in self._repos.values() if r.enabled),
             "interval": SettingsManager.get_int('polling_interval', 5),
         }
+    
+    def clone_repo(self, repo: PollingRepo) -> dict:
+        """克隆仓库到本地"""
+        import subprocess
+        import os
+        
+        local_path = repo.get_local_path()
+        
+        # 构建克隆URL
+        settings = SettingsManager.get_all()
+        git_server_url = settings.get('git_server_url', '')
+        
+        clone_url = repo.url
+        if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
+            clone_url = convert_to_http_auth_url(
+                repo.url,
+                repo.http_user,
+                repo.http_password,
+                git_server_url
+            )
+        
+        try:
+            # 更新状态
+            repo.clone_status = 'cloning'
+            self._save_repos()
+            
+            # 如果目录已存在，先删除
+            if os.path.exists(local_path):
+                import shutil
+                shutil.rmtree(local_path)
+            
+            # 创建父目录
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            
+            # 执行克隆
+            cmd = ['git', 'clone', '--branch', repo.branch, '--single-branch', clone_url, local_path]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                repo.clone_status = 'cloned'
+                self._save_repos()
+                logger.info(f"仓库 {repo.name} 克隆成功: {local_path}")
+                return {"success": True, "message": f"克隆成功: {local_path}", "path": local_path}
+            else:
+                repo.clone_status = 'error'
+                self._save_repos()
+                logger.error(f"仓库 {repo.name} 克隆失败: {result.stderr}")
+                return {"success": False, "message": f"克隆失败: {result.stderr[:200]}"}
+                
+        except subprocess.TimeoutExpired:
+            repo.clone_status = 'error'
+            self._save_repos()
+            return {"success": False, "message": "克隆超时"}
+        except Exception as e:
+            repo.clone_status = 'error'
+            self._save_repos()
+            logger.error(f"克隆仓库失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    def get_branches(self, repo_url: str, platform: str, auth_type: str, 
+                     token: str = '', http_user: str = '', http_password: str = '') -> list:
+        """获取仓库分支列表"""
+        try:
+            settings = SettingsManager.get_all()
+            api_url = settings.get('git_api_url', '')
+            
+            if not api_url:
+                return []
+            
+            auth_info = self._build_auth_info(platform, token, http_user, http_password)
+            project_path = self._extract_project_path(repo_url, platform)
+            
+            if not project_path:
+                return []
+            
+            from urllib.parse import quote
+            encoded_path = quote(project_path, safe='')
+            
+            if platform == 'gitlab':
+                url = f"{api_url}/projects/{encoded_path}/repository/branches"
+            elif platform == 'gitea':
+                url = f"{api_url}/repos/{project_path}/branches"
+            elif platform == 'github':
+                url = f"{api_url}/repos/{project_path}/branches"
+            else:
+                return []
+            
+            response = requests.get(
+                url,
+                headers=auth_info.get('headers', {}),
+                auth=auth_info.get('auth'),
+                timeout=15
+            )
+            response.raise_for_status()
+            branches_data = response.json()
+            
+            # 提取分支名称
+            branches = []
+            for b in branches_data:
+                name = b.get('name', '')
+                if name:
+                    branches.append(name)
+            
+            return branches
+            
+        except Exception as e:
+            logger.error(f"获取分支列表失败: {e}")
+            return []
 
 
 # 全局实例

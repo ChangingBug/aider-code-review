@@ -416,42 +416,111 @@
 
     <!-- 添加仓库模态框 -->
     <div class="modal-overlay" id="add-repo-modal">
-        <div class="modal" style="max-width: 500px;">
+        <div class="modal" style="max-width: 600px;">
             <div class="modal-header">
                 <h3 class="modal-title">添加监控仓库</h3>
                 <button class="modal-close" onclick="closeAddRepoModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label>仓库名称</label>
-                    <input type="text" id="new-repo-name" class="form-input" placeholder="如: my-project">
+                <!-- Git平台和鉴权方式 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>Git平台</label>
+                        <select id="new-repo-platform" class="form-input">
+                            <option value="gitlab">GitLab</option>
+                            <option value="gitea">Gitea</option>
+                            <option value="github">GitHub</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>鉴权方式</label>
+                        <select id="new-repo-auth-type" class="form-input" onchange="toggleAuthFields()">
+                            <option value="http_basic">用户名/密码</option>
+                            <option value="token">API Token</option>
+                        </select>
+                    </div>
                 </div>
+
+                <!-- HTTP认证 (根据鉴权方式显示) -->
+                <div id="http-auth-fields" class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>HTTP用户名</label>
+                        <input type="text" id="new-repo-http-user" class="form-input" placeholder="git用户名">
+                    </div>
+                    <div class="form-group">
+                        <label>HTTP密码</label>
+                        <input type="password" id="new-repo-http-password" class="form-input" placeholder="git密码">
+                    </div>
+                </div>
+
+                <!-- Token认证 (根据鉴权方式显示) -->
+                <div id="token-auth-fields" class="form-group" style="display: none;">
+                    <label>API Token</label>
+                    <input type="password" id="new-repo-token" class="form-input" placeholder="Git API Token">
+                </div>
+
+                <!-- 仓库URL -->
                 <div class="form-group">
                     <label>仓库URL</label>
                     <input type="text" id="new-repo-url" class="form-input"
-                        placeholder="http://code.example.com/group/project.git">
+                        placeholder="http://code.example.com/group/project.git" oninput="onRepoUrlChange()">
+                    <small class="form-hint">输入URL后自动解析仓库名称和加载分支</small>
                 </div>
+
+                <!-- 仓库名称 -->
+                <div class="form-group">
+                    <label>仓库名称</label>
+                    <input type="text" id="new-repo-name" class="form-input" placeholder="自动从URL解析">
+                </div>
+
+                <!-- 分支选择 -->
                 <div class="form-group">
                     <label>监控分支</label>
-                    <input type="text" id="new-repo-branch" class="form-input" placeholder="main" value="main">
+                    <div style="display: flex; gap: 8px;">
+                        <select id="new-repo-branch-select" class="form-input" style="flex: 1;"
+                            onchange="updateBranchInput()">
+                            <option value="">-- 输入URL后加载分支 --</option>
+                        </select>
+                        <button type="button" class="btn btn-test" onclick="loadBranches()" id="load-branches-btn">
+                            🔄 加载
+                        </button>
+                    </div>
+                    <input type="text" id="new-repo-branch" class="form-input" placeholder="main" value="main"
+                        style="margin-top: 8px;">
                 </div>
+
+                <!-- 存储路径 -->
                 <div class="form-group">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
-                        <span class="toggle-switch"></span>
-                        <span>轮询新提交</span>
-                    </label>
+                    <label>本地存储路径</label>
+                    <input type="text" id="new-repo-local-path" class="form-input"
+                        placeholder="默认: /app/repos/{名称}/{分支}">
+                    <small class="form-hint">留空使用默认路径</small>
                 </div>
-                <div class="form-group">
-                    <label class="toggle-label">
-                        <input type="checkbox" id="new-repo-mrs" class="toggle-input">
-                        <span class="toggle-switch"></span>
-                        <span>轮询新MR</span>
-                    </label>
+
+                <!-- 监控配置 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>轮询新提交</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-mrs" class="toggle-input">
+                            <span class="toggle-switch"></span>
+                            <span>轮询新MR</span>
+                        </label>
+                    </div>
                 </div>
+
+                <!-- 操作结果 -->
+                <div id="add-repo-result" class="test-result" style="margin-top: 12px;"></div>
+
                 <div style="text-align: right; margin-top: 20px;">
                     <button type="button" class="btn btn-test" onclick="closeAddRepoModal()">取消</button>
-                    <button type="button" class="btn btn-primary" onclick="addRepo()">添加</button>
+                    <button type="button" class="btn btn-primary" onclick="addRepo()">➕ 添加并克隆</button>
                 </div>
             </div>
         </div>
