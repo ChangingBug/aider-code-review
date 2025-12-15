@@ -212,28 +212,12 @@ class PollingManager:
                 time.sleep(10)
     
     def _check_repo(self, repo: PollingRepo):
-        """检查单个仓库的新提交/MR"""
+        """检查单个仓库的新提交/MR（使用git命令，不依赖API）"""
+        import subprocess
+        
         # 使用仓库级别的配置
         platform = repo.platform
         api_url = repo.api_url
-        
-        if not api_url:
-            logger.warning(f"仓库 {repo.name} 未配置API地址，跳过")
-            return
-        
-        # 使用仓库级别的认证信息
-        auth_info = self._build_auth_info(
-            platform, 
-            repo.token,  # 仓库级Token
-            repo.http_user,  # 仓库级HTTP用户
-            repo.http_password  # 仓库级HTTP密码
-        )
-        
-        # 从URL提取项目路径
-        project_path = self._extract_project_path(repo.url, platform)
-        if not project_path:
-            logger.warning(f"无法解析仓库路径: {repo.url}")
-            return
         
         # 解析生效时间
         effective_time = None
@@ -243,9 +227,9 @@ class PollingManager:
             except ValueError:
                 logger.warning(f"无效的生效时间格式: {repo.effective_time}")
         
-        # 检查新提交
+        # 检查新提交 - 使用git ls-remote获取远程HEAD
         if repo.poll_commits:
-            new_commits = self._get_new_commits(platform, api_url, auth_info, project_path, repo.branch, repo.last_commit_id, effective_time)
+            new_commits = self._get_new_commits_git(repo, effective_time)
             if new_commits:
                 # 首次轮询（last_commit_id为空）只记录最新commit，不触发审查
                 if not repo.last_commit_id:
@@ -258,25 +242,100 @@ class PollingManager:
                     # 更新最后检查的commit
                     repo.last_commit_id = new_commits[0]['id']
         
-        # 检查新MR
+        # 检查新MR - 仍需要API地址
         if repo.poll_mrs:
-            new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id, effective_time)
-            if new_mrs:
-                # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
-                if repo.last_mr_id == 0:
-                    max_mr_id = max(mr['iid'] for mr in new_mrs)
-                    logger.info(f"仓库 {repo.name} 首次轮询，记录最新MR ID: {max_mr_id}")
-                    repo.last_mr_id = max_mr_id
-                else:
-                    logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
-                    for mr in new_mrs:
-                        self._trigger_review(repo, 'merge_request', mr)
-                    # 更新最后检查的MR
-                    repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
+            if not api_url:
+                logger.debug(f"仓库 {repo.name} 未配置API地址，跳过MR轮询")
+            else:
+                # 使用仓库级别的认证信息
+                auth_info = self._build_auth_info(
+                    platform, 
+                    repo.token,
+                    repo.http_user,
+                    repo.http_password
+                )
+                project_path = self._extract_project_path(repo.url, platform)
+                if project_path:
+                    new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id, effective_time)
+                    if new_mrs:
+                        # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
+                        if repo.last_mr_id == 0:
+                            max_mr_id = max(mr['iid'] for mr in new_mrs)
+                            logger.info(f"仓库 {repo.name} 首次轮询，记录最新MR ID: {max_mr_id}")
+                            repo.last_mr_id = max_mr_id
+                        else:
+                            logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
+                            for mr in new_mrs:
+                                self._trigger_review(repo, 'merge_request', mr)
+                            # 更新最后检查的MR
+                            repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
         
         # 更新检查时间
         repo.last_check_time = datetime.utcnow().isoformat()
         self._save_repos()
+    
+    def _get_new_commits_git(self, repo: PollingRepo, effective_time: Optional[datetime] = None) -> List[dict]:
+        """使用git命令获取新提交（不依赖API）"""
+        import subprocess
+        
+        try:
+            # 构建认证URL
+            settings = SettingsManager.get_all()
+            git_server_url = settings.get('git_server_url', '')
+            
+            auth_url = repo.url
+            if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    repo.http_user,
+                    repo.http_password,
+                    git_server_url
+                )
+            elif repo.auth_type == 'token' and repo.token:
+                from urllib.parse import urlparse, urlunparse
+                parsed = urlparse(repo.url)
+                auth_url = urlunparse((
+                    parsed.scheme,
+                    f"{repo.token}@{parsed.netloc}",
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
+            
+            # 使用git ls-remote获取远程分支的最新commit SHA
+            cmd = ['git', 'ls-remote', auth_url, f'refs/heads/{repo.branch}']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                logger.error(f"git ls-remote失败: {result.stderr}")
+                return []
+            
+            # 解析输出: <sha>\trefs/heads/<branch>
+            output = result.stdout.strip()
+            if not output:
+                logger.warning(f"仓库 {repo.name} 分支 {repo.branch} 未找到")
+                return []
+            
+            remote_sha = output.split('\t')[0]
+            
+            # 如果和上次相同，没有新提交
+            if remote_sha == repo.last_commit_id:
+                return []
+            
+            # 发现新提交
+            return [{
+                'id': remote_sha,
+                'message': f'New commit on {repo.branch}',
+                'author': 'Polling',
+            }]
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"git ls-remote超时: {repo.name}")
+            return []
+        except Exception as e:
+            logger.error(f"获取提交失败: {e}")
+            return []
     
     def _build_auth_info(self, platform: str, token: str, http_user: str, http_password: str) -> dict:
         """
