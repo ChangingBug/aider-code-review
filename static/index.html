@@ -473,7 +473,7 @@
                 <!-- 触发模式 -->
                 <div class="form-group">
                     <label>触发模式</label>
-                    <select id="new-repo-trigger-mode" class="form-select">
+                    <select id="new-repo-trigger-mode" class="form-select" onchange="toggleTriggerModeFields()">
                         <option value="polling">🔄 轮询模式 - 定时检查新提交/MR</option>
                         <option value="webhook">🔔 Webhook模式 - Git平台推送触发</option>
                         <option value="both">🔄🔔 混合模式 - 同时支持两种方式</option>

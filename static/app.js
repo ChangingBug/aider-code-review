@@ -942,9 +942,6 @@ function toggleTriggerModeFields() {
     }
 }
 
-// 绑定触发模式选择事件
-document.getElementById('new-repo-trigger-mode')?.addEventListener('change', toggleTriggerModeFields);
-
 // 从仓库URL推断API地址
 function inferApiUrl(repoUrl, platform) {
     try {
