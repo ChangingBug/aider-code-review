@@ -257,27 +257,6 @@
                 </div>
 
                 <form id="settings-form">
-                    <!-- Git 配置 (简化版 - 仅保留必要的全局配置) -->
-                    <div class="settings-card">
-                        <h3 class="settings-title">🔗 Git API 配置</h3>
-                        <div class="settings-grid">
-                            <div class="form-group">
-                                <label>Git服务器地址</label>
-                                <input type="text" name="git_server_url" class="form-input"
-                                    placeholder="http://code.example.com">
-                                <small class="form-hint">用于URL转换</small>
-                            </div>
-                            <div class="form-group">
-                                <label>API地址</label>
-                                <input type="text" name="git_api_url" class="form-input"
-                                    placeholder="http://code.example.com/api/v4">
-                                <small class="form-hint">用于查询分支和提交信息</small>
-                            </div>
-                        </div>
-                        <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">
-                            💡 Git平台类型、认证信息、评论开关已移至「监控仓库」单独配置
-                        </p>
-                    </div>
 
                     <!-- vLLM 配置 -->
                     <div class="settings-card">
@@ -428,6 +407,14 @@
                 <div id="token-auth-fields" class="form-group" style="display: none;">
                     <label>API Token</label>
                     <input type="password" id="new-repo-token" class="form-input" placeholder="Git API Token">
+                </div>
+
+                <!-- API地址 -->
+                <div class="form-group">
+                    <label>API地址</label>
+                    <input type="text" id="new-repo-api-url" class="form-input"
+                        placeholder="http://code.example.com/api/v4">
+                    <small class="form-hint">用于查询分支和回写评论（GitLab一般为/api/v4，Gitea为/api/v1）</small>
                 </div>
 
                 <!-- 仓库URL -->

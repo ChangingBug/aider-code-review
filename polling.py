@@ -29,6 +29,7 @@ class PollingRepo:
     http_user: str = ""           # HTTP认证用户名
     http_password: str = ""       # HTTP认证密码
     token: str = ""               # API Token
+    api_url: str = ""             # Git API地址（仓库级别，如 http://code.example.com/api/v4）
     
     # 存储配置
     local_path: str = ""          # 本地存储路径，默认 /app/repos/{name}/{branch}
@@ -209,13 +210,10 @@ class PollingManager:
         """检查单个仓库的新提交/MR"""
         # 使用仓库级别的配置
         platform = repo.platform
-        
-        # 从全局配置获取API URL（仍然使用全局）
-        settings = SettingsManager.get_all()
-        api_url = settings.get('git_api_url', '')
+        api_url = repo.api_url
         
         if not api_url:
-            logger.warning(f"Git API地址未配置，跳过仓库 {repo.name}")
+            logger.warning(f"仓库 {repo.name} 未配置API地址，跳过")
             return
         
         # 使用仓库级别的认证信息
@@ -446,6 +444,7 @@ class PollingManager:
             'repo_token': repo.token,
             'repo_http_user': repo.http_user,
             'repo_http_password': repo.http_password,
+            'repo_api_url': repo.api_url,  # 仓库级API地址
         }
         
         if strategy == 'commit':
@@ -531,13 +530,12 @@ class PollingManager:
             return {"success": False, "message": str(e)}
     
     def get_branches(self, repo_url: str, platform: str, auth_type: str, 
-                     token: str = '', http_user: str = '', http_password: str = '') -> list:
+                     token: str = '', http_user: str = '', http_password: str = '',
+                     api_url: str = '') -> list:
         """获取仓库分支列表"""
         try:
-            settings = SettingsManager.get_all()
-            api_url = settings.get('git_api_url', '')
-            
             if not api_url:
+                logger.warning("未提供API地址，无法获取分支列表")
                 return []
             
             auth_info = self._build_auth_info(platform, token, http_user, http_password)

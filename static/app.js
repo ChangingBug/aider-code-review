@@ -810,10 +810,17 @@ async function loadBranches() {
     const token = document.getElementById('new-repo-token').value;
     const httpUser = document.getElementById('new-repo-http-user').value;
     const httpPassword = document.getElementById('new-repo-http-password').value;
+    const apiUrl = document.getElementById('new-repo-api-url').value.trim();
 
     if (!url) {
         resultEl.className = 'test-result error';
         resultEl.textContent = '请先输入仓库URL';
+        return;
+    }
+
+    if (!apiUrl) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '请先输入API地址';
         return;
     }
 
@@ -828,7 +835,8 @@ async function loadBranches() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 url, platform, auth_type: authType,
-                token, http_user: httpUser, http_password: httpPassword
+                token, http_user: httpUser, http_password: httpPassword,
+                api_url: apiUrl
             })
         });
         const data = await response.json();
@@ -868,6 +876,7 @@ async function addRepo() {
     const token = document.getElementById('new-repo-token').value;
     const httpUser = document.getElementById('new-repo-http-user').value;
     const httpPassword = document.getElementById('new-repo-http-password').value;
+    const apiUrl = document.getElementById('new-repo-api-url').value.trim();
     const localPath = document.getElementById('new-repo-local-path').value.trim();
     const pollCommits = document.getElementById('new-repo-commits').checked;
     const pollMrs = document.getElementById('new-repo-mrs').checked;
@@ -876,6 +885,12 @@ async function addRepo() {
     if (!url) {
         resultEl.className = 'test-result error';
         resultEl.textContent = '请输入仓库URL';
+        return;
+    }
+
+    if (!apiUrl) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '请输入API地址';
         return;
     }
 
@@ -892,6 +907,7 @@ async function addRepo() {
                 url, branch, platform,
                 auth_type: authType,
                 token, http_user: httpUser, http_password: httpPassword,
+                api_url: apiUrl,
                 local_path: localPath,
                 poll_commits: pollCommits,
                 poll_mrs: pollMrs,

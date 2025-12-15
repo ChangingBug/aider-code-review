@@ -489,7 +489,8 @@ async def get_repo_branches(request: Request):
         auth_type=data.get('auth_type', 'http_basic'),
         token=data.get('token', ''),
         http_user=data.get('http_user', ''),
-        http_password=data.get('http_password', '')
+        http_password=data.get('http_password', ''),
+        api_url=data.get('api_url', '')
     )
     
     return {"branches": branches}
@@ -1011,12 +1012,12 @@ def post_comment_to_git(context: dict, report: str):
     """回写评论到Git平台"""
     platform = context.get('platform', 'gitlab')
     
-    # 优先使用仓库级认证信息，fallback到全局配置
+    # 优先使用仓库级认证信息和API地址
     settings = SettingsManager.get_all()
     token = context.get('repo_token', '') or settings.get('git_token', '')
     http_user = context.get('repo_http_user', '') or settings.get('git_http_user', '')
     http_password = context.get('repo_http_password', '') or settings.get('git_http_password', '')
-    api_url = settings.get('git_api_url', '')
+    api_url = context.get('repo_api_url', '') or settings.get('git_api_url', '')
     
     if not api_url:
         logger.warning("未配置Git API地址，无法回写评论")
