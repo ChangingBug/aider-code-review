@@ -242,33 +242,21 @@ class PollingManager:
                     # 更新最后检查的commit
                     repo.last_commit_id = new_commits[0]['id']
         
-        # 检查新MR - 仍需要API地址
+        # 检查新MR - 使用git ls-remote检查MR refs
         if repo.poll_mrs:
-            if not api_url:
-                logger.debug(f"仓库 {repo.name} 未配置API地址，跳过MR轮询")
-            else:
-                # 使用仓库级别的认证信息
-                auth_info = self._build_auth_info(
-                    platform, 
-                    repo.token,
-                    repo.http_user,
-                    repo.http_password
-                )
-                project_path = self._extract_project_path(repo.url, platform)
-                if project_path:
-                    new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id, effective_time)
-                    if new_mrs:
-                        # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
-                        if repo.last_mr_id == 0:
-                            max_mr_id = max(mr['iid'] for mr in new_mrs)
-                            logger.info(f"仓库 {repo.name} 首次轮询，记录最新MR ID: {max_mr_id}")
-                            repo.last_mr_id = max_mr_id
-                        else:
-                            logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
-                            for mr in new_mrs:
-                                self._trigger_review(repo, 'merge_request', mr)
-                            # 更新最后检查的MR
-                            repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
+            new_mrs = self._get_new_mrs_git(repo, effective_time)
+            if new_mrs:
+                # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
+                if repo.last_mr_id == 0:
+                    max_mr_id = max(mr['iid'] for mr in new_mrs)
+                    logger.info(f"仓库 {repo.name} 首次轮询，记录最新MR ID: {max_mr_id}")
+                    repo.last_mr_id = max_mr_id
+                else:
+                    logger.info(f"仓库 {repo.name} 发现 {len(new_mrs)} 个新MR")
+                    for mr in new_mrs:
+                        self._trigger_review(repo, 'merge_request', mr)
+                    # 更新最后检查的MR
+                    repo.last_mr_id = max(mr['iid'] for mr in new_mrs)
         
         # 更新检查时间
         repo.last_check_time = datetime.utcnow().isoformat()
@@ -335,6 +323,99 @@ class PollingManager:
             return []
         except Exception as e:
             logger.error(f"获取提交失败: {e}")
+            return []
+    
+    def _get_new_mrs_git(self, repo: PollingRepo, effective_time: Optional[datetime] = None) -> List[dict]:
+        """使用git命令获取新MR（通过检查refs/merge-requests或refs/pull）"""
+        import subprocess
+        
+        try:
+            # 构建认证URL
+            settings = SettingsManager.get_all()
+            git_server_url = settings.get('git_server_url', '')
+            
+            auth_url = repo.url
+            if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    repo.http_user,
+                    repo.http_password,
+                    git_server_url
+                )
+            elif repo.auth_type == 'token' and repo.token:
+                from urllib.parse import urlparse, urlunparse
+                parsed = urlparse(repo.url)
+                auth_url = urlunparse((
+                    parsed.scheme,
+                    f"{repo.token}@{parsed.netloc}",
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
+            
+            # 根据平台选择MR refs模式
+            platform = repo.platform
+            if platform == 'gitlab':
+                # GitLab: refs/merge-requests/<id>/head
+                ref_pattern = 'refs/merge-requests/*/head'
+            else:
+                # GitHub/Gitea: refs/pull/<id>/head
+                ref_pattern = 'refs/pull/*/head'
+            
+            # 使用git ls-remote获取所有MR refs
+            cmd = ['git', 'ls-remote', auth_url, ref_pattern]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode != 0:
+                # 有些仓库可能不支持这种refs模式，静默处理
+                logger.debug(f"git ls-remote MR失败: {result.stderr}")
+                return []
+            
+            # 解析输出获取MR ID
+            new_mrs = []
+            for line in result.stdout.strip().split('\n'):
+                if not line or '\t' not in line:
+                    continue
+                    
+                sha, ref = line.split('\t')
+                
+                # 提取MR ID
+                if platform == 'gitlab':
+                    # refs/merge-requests/123/head -> 123
+                    parts = ref.split('/')
+                    if len(parts) >= 3:
+                        try:
+                            mr_id = int(parts[2])
+                        except ValueError:
+                            continue
+                else:
+                    # refs/pull/123/head -> 123
+                    parts = ref.split('/')
+                    if len(parts) >= 3:
+                        try:
+                            mr_id = int(parts[2])
+                        except ValueError:
+                            continue
+                
+                # 检查是否是新MR
+                if mr_id > repo.last_mr_id:
+                    new_mrs.append({
+                        'iid': mr_id,
+                        'title': f'MR #{mr_id}',
+                        'source_branch': f'mr-{mr_id}',
+                        'target_branch': repo.branch,
+                    })
+            
+            # 按ID排序（最新的在前）
+            new_mrs.sort(key=lambda x: x['iid'], reverse=True)
+            return new_mrs
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"git ls-remote MR超时: {repo.name}")
+            return []
+        except Exception as e:
+            logger.error(f"获取MR失败: {e}")
             return []
     
     def _build_auth_info(self, platform: str, token: str, http_user: str, http_password: str) -> dict:
