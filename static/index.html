@@ -487,22 +487,55 @@
                     <small class="form-hint">在Git平台配置Webhook时设置相同的密钥</small>
                 </div>
 
-                <!-- 监控配置 -->
-                <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
-                            <span class="toggle-switch"></span>
-                            <span>轮询新提交</span>
-                        </label>
+                <!-- 轮询模式配置（仅polling/both模式显示） -->
+                <div id="polling-config-group">
+                    <h5 style="margin: 16px 0 12px; color: var(--text-secondary); font-size: 13px;">🔄 轮询模式配置</h5>
+                    <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
+                                <span class="toggle-switch"></span>
+                                <span>监控新提交</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="new-repo-mrs" class="toggle-input">
+                                <span class="toggle-switch"></span>
+                                <span>监控新MR</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="toggle-label">
-                            <input type="checkbox" id="new-repo-mrs" class="toggle-input" checked>
-                            <span class="toggle-switch"></span>
-                            <span>轮询新MR</span>
-                        </label>
+                </div>
+
+                <!-- Webhook模式配置（仅webhook/both模式显示） -->
+                <div id="webhook-config-group" style="display: none;">
+                    <h5 style="margin: 16px 0 12px; color: var(--text-secondary); font-size: 13px;">🔔 Webhook模式配置</h5>
+                    <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="new-repo-webhook-commits" class="toggle-input" checked>
+                                <span class="toggle-switch"></span>
+                                <span>响应Push事件</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="new-repo-webhook-mrs" class="toggle-input" checked>
+                                <span class="toggle-switch"></span>
+                                <span>响应MR事件</span>
+                            </label>
+                        </div>
                     </div>
+                    <div class="form-group" style="margin-top: 8px;">
+                        <label>监控分支</label>
+                        <input type="text" id="new-repo-webhook-branches" class="form-input"
+                            placeholder="main, develop（逗号分隔，留空表示所有分支）">
+                    </div>
+                </div>
+
+                <!-- 通用配置 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr; gap: 12px; margin-top: 12px;">
                     <div class="form-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="new-repo-enable-comment" class="toggle-input" checked

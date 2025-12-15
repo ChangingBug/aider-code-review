@@ -34,12 +34,19 @@ class PollingRepo:
     # 存储配置
     local_path: str = ""          # 本地存储路径，默认 /app/repos/{name}/{branch}
     
-    # 监控配置
+    # 轮询模式配置（独立）
     strategy: str = "commit"      # 审查策略: commit / mr
     poll_commits: bool = True     # 是否轮询新提交
     poll_mrs: bool = False        # 是否轮询新MR
-    enable_comment: bool = True   # 是否启用评论回写
     effective_time: str = ""      # 生效时间，只监控此时间之后的提交和MR (ISO格式: YYYY-MM-DDTHH:MM)
+    
+    # Webhook模式配置（独立）
+    webhook_commits: bool = True  # Webhook是否响应Push事件
+    webhook_mrs: bool = True      # Webhook是否响应MR事件
+    webhook_branches: str = ""    # Webhook监控的分支（逗号分隔，空表示所有分支）
+    
+    # 通用配置
+    enable_comment: bool = True   # 是否启用评论回写
     
     # 状态信息
     last_commit_id: str = ""      # 上次检查的commit ID

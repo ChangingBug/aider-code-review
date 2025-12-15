@@ -918,12 +918,27 @@ function toggleApiUrlField() {
     document.getElementById('api-url-field').style.display = enableComment ? 'block' : 'none';
 }
 
-// 触发模式切换时显示/隐藏webhook密钥字段
+// 触发模式切换时显示/隐藏相关配置区域
 function toggleTriggerModeFields() {
     const triggerMode = document.getElementById('new-repo-trigger-mode')?.value || 'polling';
-    const webhookGroup = document.getElementById('webhook-secret-group');
-    if (webhookGroup) {
-        webhookGroup.style.display = (triggerMode === 'webhook' || triggerMode === 'both') ? 'block' : 'none';
+
+    const webhookSecretGroup = document.getElementById('webhook-secret-group');
+    const pollingConfigGroup = document.getElementById('polling-config-group');
+    const webhookConfigGroup = document.getElementById('webhook-config-group');
+
+    // Webhook密钥：webhook/both模式显示
+    if (webhookSecretGroup) {
+        webhookSecretGroup.style.display = (triggerMode === 'webhook' || triggerMode === 'both') ? 'block' : 'none';
+    }
+
+    // 轮询配置：polling/both模式显示
+    if (pollingConfigGroup) {
+        pollingConfigGroup.style.display = (triggerMode === 'polling' || triggerMode === 'both') ? 'block' : 'none';
+    }
+
+    // Webhook配置：webhook/both模式显示
+    if (webhookConfigGroup) {
+        webhookConfigGroup.style.display = (triggerMode === 'webhook' || triggerMode === 'both') ? 'block' : 'none';
     }
 }
 
@@ -1075,6 +1090,9 @@ async function addRepo() {
     const enableComment = document.getElementById('new-repo-enable-comment').checked;
     const triggerMode = document.getElementById('new-repo-trigger-mode')?.value || 'polling';
     const webhookSecret = document.getElementById('new-repo-webhook-secret')?.value || '';
+    const webhookCommits = document.getElementById('new-repo-webhook-commits')?.checked ?? true;
+    const webhookMrs = document.getElementById('new-repo-webhook-mrs')?.checked ?? true;
+    const webhookBranches = document.getElementById('new-repo-webhook-branches')?.value || '';
 
     if (!url) {
         resultEl.className = 'test-result error';
@@ -1104,7 +1122,10 @@ async function addRepo() {
                 poll_mrs: pollMrs,
                 enable_comment: enableComment,
                 trigger_mode: triggerMode,
-                webhook_secret: webhookSecret
+                webhook_secret: webhookSecret,
+                webhook_commits: webhookCommits,
+                webhook_mrs: webhookMrs,
+                webhook_branches: webhookBranches
             })
         });
 
