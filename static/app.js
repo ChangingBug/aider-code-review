@@ -928,6 +928,7 @@ async function addRepo() {
     const httpPassword = document.getElementById('new-repo-http-password').value;
     const apiUrl = document.getElementById('new-repo-api-url').value.trim();
     const localPath = document.getElementById('new-repo-local-path').value.trim();
+    const effectiveTime = document.getElementById('new-repo-effective-time').value;
     const pollCommits = document.getElementById('new-repo-commits').checked;
     const pollMrs = document.getElementById('new-repo-mrs').checked;
     const enableComment = document.getElementById('new-repo-enable-comment').checked;
@@ -959,6 +960,7 @@ async function addRepo() {
                 token, http_user: httpUser, http_password: httpPassword,
                 api_url: apiUrl,
                 local_path: localPath,
+                effective_time: effectiveTime,
                 poll_commits: pollCommits,
                 poll_mrs: pollMrs,
                 enable_comment: enableComment

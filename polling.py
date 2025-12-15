@@ -39,6 +39,7 @@ class PollingRepo:
     poll_commits: bool = True     # 是否轮询新提交
     poll_mrs: bool = False        # 是否轮询新MR
     enable_comment: bool = True   # 是否启用评论回写
+    effective_time: str = ""      # 生效时间，只监控此时间之后的提交和MR (ISO格式: YYYY-MM-DDTHH:MM)
     
     # 状态信息
     last_commit_id: str = ""      # 上次检查的commit ID
@@ -230,9 +231,17 @@ class PollingManager:
             logger.warning(f"无法解析仓库路径: {repo.url}")
             return
         
+        # 解析生效时间
+        effective_time = None
+        if repo.effective_time:
+            try:
+                effective_time = datetime.fromisoformat(repo.effective_time.replace('Z', '+00:00'))
+            except ValueError:
+                logger.warning(f"无效的生效时间格式: {repo.effective_time}")
+        
         # 检查新提交
         if repo.poll_commits:
-            new_commits = self._get_new_commits(platform, api_url, auth_info, project_path, repo.branch, repo.last_commit_id)
+            new_commits = self._get_new_commits(platform, api_url, auth_info, project_path, repo.branch, repo.last_commit_id, effective_time)
             if new_commits:
                 # 首次轮询（last_commit_id为空）只记录最新commit，不触发审查
                 if not repo.last_commit_id:
@@ -247,7 +256,7 @@ class PollingManager:
         
         # 检查新MR
         if repo.poll_mrs:
-            new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id)
+            new_mrs = self._get_new_mrs(platform, api_url, auth_info, project_path, repo.last_mr_id, effective_time)
             if new_mrs:
                 # 首次轮询（last_mr_id为0）只记录最新MR ID，不触发审查
                 if repo.last_mr_id == 0:
@@ -307,8 +316,9 @@ class PollingManager:
         return None
     
     def _get_new_commits(self, platform: str, api_url: str, auth_info: dict, 
-                         project_path: str, branch: str, last_commit_id: str) -> List[dict]:
-        """获取新提交"""
+                         project_path: str, branch: str, last_commit_id: str,
+                         effective_time: Optional[datetime] = None) -> List[dict]:
+        """获取新提交（支持生效时间过滤）"""
         try:
             from urllib.parse import quote
             encoded_path = quote(project_path, safe='')
@@ -316,12 +326,18 @@ class PollingManager:
             if platform == 'gitlab':
                 url = f"{api_url}/projects/{encoded_path}/repository/commits"
                 params = {"ref_name": branch, "per_page": 10}
+                # GitLab支持since参数
+                if effective_time:
+                    params["since"] = effective_time.isoformat()
             elif platform == 'gitea':
                 url = f"{api_url}/repos/{project_path}/commits"
                 params = {"sha": branch, "limit": 10}
             elif platform == 'github':
                 url = f"{api_url}/repos/{project_path}/commits"
                 params = {"sha": branch, "per_page": 10}
+                # GitHub支持since参数
+                if effective_time:
+                    params["since"] = effective_time.isoformat()
             else:
                 return []
             
@@ -341,6 +357,18 @@ class PollingManager:
                 commit_id = commit.get('id') or commit.get('sha')
                 if commit_id == last_commit_id:
                     break
+                
+                # 客户端时间过滤（用于Gitea或API不支持since的情况）
+                if effective_time:
+                    commit_time_str = commit.get('committed_date') or commit.get('commit', {}).get('committer', {}).get('date', '')
+                    if commit_time_str:
+                        try:
+                            commit_time = datetime.fromisoformat(commit_time_str.replace('Z', '+00:00'))
+                            if commit_time < effective_time:
+                                continue  # 跳过早于生效时间的提交
+                        except ValueError:
+                            pass
+                
                 new_commits.append({
                     'id': commit_id,
                     'message': commit.get('message') or commit.get('commit', {}).get('message', ''),
@@ -354,8 +382,9 @@ class PollingManager:
             return []
     
     def _get_new_mrs(self, platform: str, api_url: str, auth_info: dict,
-                     project_path: str, last_mr_id: int) -> List[dict]:
-        """获取新MR"""
+                     project_path: str, last_mr_id: int,
+                     effective_time: Optional[datetime] = None) -> List[dict]:
+        """获取新MR（支持生效时间过滤）"""
         try:
             from urllib.parse import quote
             encoded_path = quote(project_path, safe='')
@@ -363,6 +392,9 @@ class PollingManager:
             if platform == 'gitlab':
                 url = f"{api_url}/projects/{encoded_path}/merge_requests"
                 params = {"state": "opened", "per_page": 10}
+                # GitLab支持created_after参数
+                if effective_time:
+                    params["created_after"] = effective_time.isoformat()
             elif platform == 'gitea':
                 url = f"{api_url}/repos/{project_path}/pulls"
                 params = {"state": "open", "limit": 10}
@@ -387,6 +419,17 @@ class PollingManager:
             for mr in mrs:
                 mr_iid = mr.get('iid') or mr.get('number')
                 if mr_iid and mr_iid > last_mr_id:
+                    # 客户端时间过滤（用于Gitea/GitHub或API不支持的情况）
+                    if effective_time:
+                        created_at_str = mr.get('created_at') or ''
+                        if created_at_str:
+                            try:
+                                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                                if created_at < effective_time:
+                                    continue  # 跳过早于生效时间的MR
+                            except ValueError:
+                                pass
+                    
                     new_mrs.append({
                         'iid': mr_iid,
                         'title': mr.get('title', ''),
