@@ -1172,7 +1172,9 @@ async function toggleRepoEnabled(repoId, enabled) {
 
 // 手动触发仓库审查
 async function triggerRepoReview(repoId) {
-    if (!confirm('确定要立即触发审查吗？这将审查该仓库的最新提交。')) return;
+    // 弹出选择审查类型
+    const strategy = await showReviewTypeDialog();
+    if (!strategy) return; // 用户取消
 
     try {
         const btn = event.target;
@@ -1180,7 +1182,9 @@ async function triggerRepoReview(repoId) {
         btn.textContent = '⏳';
 
         const response = await fetch(`/api/polling/repos/${repoId}/trigger`, {
-            method: 'POST'
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ strategy })
         });
 
         const result = await response.json();
@@ -1196,6 +1200,58 @@ async function triggerRepoReview(repoId) {
     } finally {
         loadPollingData();
     }
+}
+
+// 显示审查类型选择对话框
+function showReviewTypeDialog() {
+    return new Promise((resolve) => {
+        // 创建模态框
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.style.zIndex = '2000';
+        overlay.innerHTML = `
+            <div class="modal" style="max-width: 400px;">
+                <div class="modal-header">
+                    <h3 class="modal-title">选择审查类型</h3>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <button class="btn btn-primary" style="padding: 15px; font-size: 16px;" id="select-commit">
+                            📝 Commit 审查
+                            <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">审查最新提交的代码变更</div>
+                        </button>
+                        <button class="btn" style="padding: 15px; font-size: 16px; background: var(--success);" id="select-mr">
+                            🔀 MR/PR 审查
+                            <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">审查整个分支的代码变更</div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // 绑定事件
+        overlay.querySelector('#select-commit').onclick = () => {
+            overlay.remove();
+            resolve('commit');
+        };
+        overlay.querySelector('#select-mr').onclick = () => {
+            overlay.remove();
+            resolve('merge_request');
+        };
+        overlay.querySelector('.modal-close').onclick = () => {
+            overlay.remove();
+            resolve(null);
+        };
+        overlay.onclick = (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                resolve(null);
+            }
+        };
+    });
 }
 
 // 当前编辑的仓库数据

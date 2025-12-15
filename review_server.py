@@ -518,7 +518,7 @@ async def clone_repo(repo_id: str, background_tasks: BackgroundTasks):
 
 
 @app.post("/api/polling/repos/{repo_id}/trigger")
-async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
+async def trigger_repo_review(repo_id: str, request: Request, background_tasks: BackgroundTasks):
     """手动触发仓库审查"""
     repo = polling_manager.get_repo_obj(repo_id)
     if not repo:
@@ -526,6 +526,16 @@ async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
     
     if not repo.enabled:
         raise HTTPException(status_code=400, detail="仓库已禁用")
+    
+    # 获取审查类型（默认commit）
+    try:
+        data = await request.json()
+        strategy = data.get('strategy', 'commit')
+    except:
+        strategy = 'commit'
+    
+    if strategy not in ['commit', 'merge_request']:
+        strategy = 'commit'
     
     # 构建审查context
     from utils import convert_to_http_auth_url
@@ -547,7 +557,7 @@ async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
     path_parts = project_path.split('/') if project_path else []
     
     context = {
-        'strategy': 'commit',
+        'strategy': strategy,
         'platform': repo.platform,
         'project_id': project_path,
         'project_name': repo.name,
@@ -562,12 +572,14 @@ async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
         'repo_http_password': repo.http_password,
         'repo_api_url': repo.api_url,
         'commit_id': 'HEAD',  # 审查最新提交
+        'target_branch': repo.branch,  # 用于MR审查
     }
     
     # 后台执行审查
-    background_tasks.add_task(run_aider_review, clone_url, repo.branch, 'commit', context)
+    background_tasks.add_task(run_aider_review, clone_url, repo.branch, strategy, context)
     
-    return {"status": "triggered", "repo_id": repo_id, "message": "审查任务已提交"}
+    strategy_text = 'Commit审查' if strategy == 'commit' else 'MR审查'
+    return {"status": "triggered", "repo_id": repo_id, "strategy": strategy, "message": f"{strategy_text}任务已提交"}
 
 
 @app.post("/api/polling/parse-url")
