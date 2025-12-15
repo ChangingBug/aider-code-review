@@ -575,48 +575,63 @@ class PollingManager:
     def get_branches(self, repo_url: str, platform: str, auth_type: str, 
                      token: str = '', http_user: str = '', http_password: str = '',
                      api_url: str = '') -> list:
-        """获取仓库分支列表"""
+        """使用git ls-remote获取仓库分支列表"""
+        import subprocess
+        
         try:
-            if not api_url:
-                logger.warning("未提供API地址，无法获取分支列表")
-                return []
+            # 构建认证URL
+            settings = SettingsManager.get_all()
+            git_server_url = settings.get('git_server_url', '')
             
-            auth_info = self._build_auth_info(platform, token, http_user, http_password)
-            project_path = self._extract_project_path(repo_url, platform)
+            auth_url = repo_url
+            if auth_type == 'http_basic' and http_user and http_password:
+                auth_url = convert_to_http_auth_url(
+                    repo_url,
+                    http_user,
+                    http_password,
+                    git_server_url
+                )
+            elif auth_type == 'token' and token:
+                # Token认证格式: https://token@host/path
+                from urllib.parse import urlparse, urlunparse
+                parsed = urlparse(repo_url)
+                auth_url = urlunparse((
+                    parsed.scheme,
+                    f"{token}@{parsed.netloc}",
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
             
-            if not project_path:
-                return []
-            
-            from urllib.parse import quote
-            encoded_path = quote(project_path, safe='')
-            
-            if platform == 'gitlab':
-                url = f"{api_url}/projects/{encoded_path}/repository/branches"
-            elif platform == 'gitea':
-                url = f"{api_url}/repos/{project_path}/branches"
-            elif platform == 'github':
-                url = f"{api_url}/repos/{project_path}/branches"
-            else:
-                return []
-            
-            response = requests.get(
-                url,
-                headers=auth_info.get('headers', {}),
-                auth=auth_info.get('auth'),
-                timeout=15
+            # 执行git ls-remote获取分支
+            cmd = ['git', 'ls-remote', '--heads', auth_url]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
             )
-            response.raise_for_status()
-            branches_data = response.json()
             
-            # 提取分支名称
+            if result.returncode != 0:
+                logger.error(f"git ls-remote失败: {result.stderr}")
+                return []
+            
+            # 解析输出: <sha>\trefs/heads/<branch_name>
             branches = []
-            for b in branches_data:
-                name = b.get('name', '')
-                if name:
-                    branches.append(name)
+            for line in result.stdout.strip().split('\n'):
+                if line and '\t' in line:
+                    ref = line.split('\t')[1]
+                    if ref.startswith('refs/heads/'):
+                        branch_name = ref.replace('refs/heads/', '')
+                        branches.append(branch_name)
             
+            logger.info(f"获取到 {len(branches)} 个分支")
             return branches
             
+        except subprocess.TimeoutExpired:
+            logger.error("git ls-remote超时")
+            return []
         except Exception as e:
             logger.error(f"获取分支列表失败: {e}")
             return []

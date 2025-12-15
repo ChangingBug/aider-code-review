@@ -868,16 +868,10 @@ async function loadBranches() {
         return;
     }
 
-    if (!apiUrl) {
-        resultEl.className = 'test-result error';
-        resultEl.textContent = '请先输入API地址';
-        return;
-    }
-
     btn.disabled = true;
     btn.textContent = '加载中...';
     resultEl.className = 'test-result loading';
-    resultEl.textContent = '⏳ 正在获取分支列表...';
+    resultEl.textContent = '⏳ 正在获取分支列表（使用git ls-remote）...';
 
     try {
         const response = await fetch('/api/polling/branches', {
@@ -885,8 +879,7 @@ async function loadBranches() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 url, platform, auth_type: authType,
-                token, http_user: httpUser, http_password: httpPassword,
-                api_url: apiUrl
+                token, http_user: httpUser, http_password: httpPassword
             })
         });
         const data = await response.json();
