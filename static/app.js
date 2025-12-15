@@ -764,13 +764,57 @@ function toggleAuthFields() {
     document.getElementById('token-auth-fields').style.display = authType === 'token' ? 'block' : 'none';
 }
 
-// URL变化时自动解析仓库名称
+// 平台切换时重新推断API地址
+function onPlatformChange() {
+    const url = document.getElementById('new-repo-url').value.trim();
+    if (url) {
+        const platform = document.getElementById('new-repo-platform').value;
+        const apiUrl = inferApiUrl(url, platform);
+        if (apiUrl) {
+            document.getElementById('new-repo-api-url').value = apiUrl;
+        }
+    }
+}
+
+// 从仓库URL推断API地址
+function inferApiUrl(repoUrl, platform) {
+    try {
+        const url = new URL(repoUrl);
+        const baseUrl = `${url.protocol}//${url.host}`;
+
+        switch (platform) {
+            case 'gitlab':
+                return `${baseUrl}/api/v4`;
+            case 'gitea':
+                return `${baseUrl}/api/v1`;
+            case 'github':
+                // GitHub Enterprise使用/api/v3，公共GitHub使用api.github.com
+                if (url.host === 'github.com') {
+                    return 'https://api.github.com';
+                }
+                return `${baseUrl}/api/v3`;
+            default:
+                return `${baseUrl}/api/v4`;
+        }
+    } catch (e) {
+        return '';
+    }
+}
+
+// URL变化时自动解析仓库名称和API地址
 let urlParseTimer = null;
 function onRepoUrlChange() {
     const url = document.getElementById('new-repo-url').value.trim();
     if (!url) return;
 
-    // 防抖
+    // 自动推断API地址
+    const platform = document.getElementById('new-repo-platform').value;
+    const apiUrl = inferApiUrl(url, platform);
+    if (apiUrl) {
+        document.getElementById('new-repo-api-url').value = apiUrl;
+    }
+
+    // 防抖解析仓库名称
     clearTimeout(urlParseTimer);
     urlParseTimer = setTimeout(async () => {
         try {

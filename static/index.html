@@ -376,11 +376,12 @@
                 <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                     <div class="form-group">
                         <label>Git平台</label>
-                        <select id="new-repo-platform" class="form-input">
+                        <select id="new-repo-platform" class="form-input" onchange="onPlatformChange()">
                             <option value="gitlab">GitLab</option>
                             <option value="gitea">Gitea</option>
                             <option value="github">GitHub</option>
                         </select>
+                        <small class="form-hint">切换后会自动更新API地址</small>
                     </div>
                     <div class="form-group">
                         <label>鉴权方式</label>
