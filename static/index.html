@@ -410,12 +410,12 @@
                     <input type="password" id="new-repo-token" class="form-input" placeholder="Git API Token">
                 </div>
 
-                <!-- API地址 -->
-                <div class="form-group">
+                <!-- API地址 (仅启用评论回写时显示) -->
+                <div class="form-group" id="api-url-field">
                     <label>API地址</label>
                     <input type="text" id="new-repo-api-url" class="form-input"
                         placeholder="http://code.example.com/api/v4">
-                    <small class="form-hint">用于查询分支和回写评论（GitLab一般为/api/v4，Gitea为/api/v1）</small>
+                    <small class="form-hint">自动推断，用于回写评论</small>
                 </div>
 
                 <!-- 仓库URL -->
@@ -474,7 +474,8 @@
                     </div>
                     <div class="form-group">
                         <label class="toggle-label">
-                            <input type="checkbox" id="new-repo-enable-comment" class="toggle-input" checked>
+                            <input type="checkbox" id="new-repo-enable-comment" class="toggle-input" checked
+                                onchange="toggleApiUrlField()">
                             <span class="toggle-switch"></span>
                             <span>评论回写</span>
                         </label>

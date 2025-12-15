@@ -776,6 +776,12 @@ function onPlatformChange() {
     }
 }
 
+// 评论开关与API地址字段联动
+function toggleApiUrlField() {
+    const enableComment = document.getElementById('new-repo-enable-comment').checked;
+    document.getElementById('api-url-field').style.display = enableComment ? 'block' : 'none';
+}
+
 // 从仓库URL推断API地址
 function inferApiUrl(repoUrl, platform) {
     try {
