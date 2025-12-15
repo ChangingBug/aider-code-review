@@ -405,38 +405,157 @@ async function showReviewDetail(taskId) {
         return;
     }
 
+    // 渲染Markdown报告
+    const renderedReport = data.report ? renderMarkdown(data.report) : '';
+
     body.innerHTML = `
-        <div style="margin-bottom: 20px;">
-            <h4 style="margin-bottom: 12px;">基本信息</h4>
-            <table class="data-table" style="font-size: 14px;">
-                <tr><td style="width: 120px; color: var(--text-secondary);">任务ID</td><td>${data.task_id}</td></tr>
-                <tr><td style="color: var(--text-secondary);">项目</td><td>${data.project_name || '-'}</td></tr>
-                <tr><td style="color: var(--text-secondary);">提交人</td><td>${data.author_name || '-'}</td></tr>
-                <tr><td style="color: var(--text-secondary);">分支</td><td>${data.branch || '-'}</td></tr>
-                <tr><td style="color: var(--text-secondary);">审查类型</td><td>${data.strategy === 'commit' ? 'Commit审查' : 'MR审查'}</td></tr>
-                <tr><td style="color: var(--text-secondary);">状态</td><td><span class="badge ${getStatusClass(data.status)}">${getStatusText(data.status)}</span></td></tr>
-                <tr><td style="color: var(--text-secondary);">处理时间</td><td>${data.processing_time_seconds ? data.processing_time_seconds.toFixed(2) + '秒' : '-'}</td></tr>
-            </table>
-        </div>
-        
-        <div style="margin-bottom: 20px;">
-            <h4 style="margin-bottom: 12px;">问题统计</h4>
-            <div style="display: flex; gap: 16px;">
-                <div><span class="badge critical">严重: ${data.critical_count || 0}</span></div>
-                <div><span class="badge warning">警告: ${data.warning_count || 0}</span></div>
-                <div><span class="badge suggestion">建议: ${data.suggestion_count || 0}</span></div>
+        <div class="review-detail">
+            <!-- 基本信息卡片 -->
+            <div class="review-info-card">
+                <div class="review-info-grid">
+                    <div class="info-item">
+                        <span class="info-label">📁 项目</span>
+                        <span class="info-value">${data.project_name || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">👤 提交人</span>
+                        <span class="info-value">${data.author_name || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">🌿 分支</span>
+                        <span class="info-value">${data.branch || '-'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">📋 类型</span>
+                        <span class="info-value">${data.strategy === 'commit' ? 'Commit审查' : 'MR审查'}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">📊 状态</span>
+                        <span class="badge ${getStatusClass(data.status)}">${getStatusText(data.status)}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">⏱️ 耗时</span>
+                        <span class="info-value">${data.processing_time_seconds ? data.processing_time_seconds.toFixed(1) + 's' : '-'}</span>
+                    </div>
+                </div>
             </div>
-        </div>
-        
-        ${data.report ? `
-        <div>
-            <h4 style="margin-bottom: 12px;">审查报告</h4>
-            <div style="background: var(--bg-primary); padding: 16px; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px; white-space: pre-wrap;">
-${escapeHtml(data.report)}
+            
+            <!-- 问题统计卡片 -->
+            <div class="issue-stats-card">
+                <div class="issue-stat critical" onclick="scrollToIssueType('critical')">
+                    <div class="issue-stat-count">${data.critical_count || 0}</div>
+                    <div class="issue-stat-label">🔴 严重</div>
+                </div>
+                <div class="issue-stat warning" onclick="scrollToIssueType('warning')">
+                    <div class="issue-stat-count">${data.warning_count || 0}</div>
+                    <div class="issue-stat-label">🟡 警告</div>
+                </div>
+                <div class="issue-stat suggestion" onclick="scrollToIssueType('suggestion')">
+                    <div class="issue-stat-count">${data.suggestion_count || 0}</div>
+                    <div class="issue-stat-label">🔵 建议</div>
+                </div>
+                <div class="issue-stat score">
+                    <div class="issue-stat-count">${data.quality_score ? data.quality_score.toFixed(0) : '-'}</div>
+                    <div class="issue-stat-label">📈 评分</div>
+                </div>
             </div>
+            
+            <!-- 审查报告 -->
+            ${data.report ? `
+            <div class="review-report-section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h4>📝 审查报告</h4>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="section-content markdown-body">
+                    ${renderedReport}
+                </div>
+            </div>
+            ` : '<div class="empty-report">暂无审查报告</div>'}
+            
+            <!-- 审查文件列表 -->
+            ${data.files_reviewed ? `
+            <div class="review-files-section">
+                <div class="section-header collapsed" onclick="toggleSection(this)">
+                    <h4>📂 审查文件 (${JSON.parse(data.files_reviewed || '[]').length})</h4>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <ul class="file-list">
+                        ${JSON.parse(data.files_reviewed || '[]').map(f => `<li><code>${f}</code></li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+            ` : ''}
         </div>
-        ` : ''}
     `;
+
+    // 初始化代码高亮
+    initCodeHighlight();
+}
+
+// 渲染Markdown
+function renderMarkdown(text) {
+    if (!text) return '';
+
+    // 检查marked库是否可用
+    if (typeof marked !== 'undefined') {
+        try {
+            // 配置marked
+            marked.setOptions({
+                highlight: function (code, lang) {
+                    if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                        try {
+                            return hljs.highlight(code, { language: lang }).value;
+                        } catch (e) { }
+                    }
+                    return code;
+                },
+                breaks: true,
+                gfm: true
+            });
+            return marked.parse(text);
+        } catch (e) {
+            console.error('Markdown解析错误:', e);
+        }
+    }
+
+    // 降级处理：简单格式化
+    return `<pre style="white-space: pre-wrap;">${escapeHtml(text)}</pre>`;
+}
+
+// 初始化代码高亮
+function initCodeHighlight() {
+    if (typeof hljs !== 'undefined') {
+        document.querySelectorAll('.markdown-body pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+    }
+}
+
+// 切换section展开/收起
+function toggleSection(header) {
+    const content = header.nextElementSibling;
+    const icon = header.querySelector('.toggle-icon');
+    const isCollapsed = header.classList.contains('collapsed');
+
+    if (isCollapsed) {
+        header.classList.remove('collapsed');
+        content.style.display = 'block';
+        icon.textContent = '▼';
+    } else {
+        header.classList.add('collapsed');
+        content.style.display = 'none';
+        icon.textContent = '▶';
+    }
+}
+
+// 滚动到指定问题类型
+function scrollToIssueType(type) {
+    const reportSection = document.querySelector('.review-report-section .section-content');
+    if (reportSection) {
+        reportSection.scrollIntoView({ behavior: 'smooth' });
+    }
 }
 
 function closeModal() {
