@@ -443,9 +443,18 @@ async def add_polling_repo(request: Request):
         name=data.get('name', '未命名仓库'),
         url=data.get('url', ''),
         branch=data.get('branch', 'main'),
+        platform=data.get('platform', 'gitlab'),
+        auth_type=data.get('auth_type', 'http_basic'),
+        http_user=data.get('http_user', ''),
+        http_password=data.get('http_password', ''),
+        token=data.get('token', ''),
+        api_url=data.get('api_url', ''),
         strategy=data.get('strategy', 'commit'),
         poll_commits=data.get('poll_commits', True),
         poll_mrs=data.get('poll_mrs', False),
+        enable_comment=data.get('enable_comment', True),
+        local_path=data.get('local_path', ''),
+        effective_time=data.get('effective_time', ''),
         enabled=data.get('enabled', True),
     )
     
