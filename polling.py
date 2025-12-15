@@ -213,11 +213,6 @@ class PollingManager:
     
     def _check_repo(self, repo: PollingRepo):
         """检查单个仓库的新提交/MR（使用git命令，不依赖API）"""
-        import subprocess
-        
-        # 使用仓库级别的配置
-        platform = repo.platform
-        api_url = repo.api_url
         
         # 解析生效时间
         effective_time = None
