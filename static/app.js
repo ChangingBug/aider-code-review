@@ -545,16 +545,13 @@ async function saveSettings(e) {
     // 构建设置对象
     const settings = {};
 
-    // 文本输入
-    ['git_platform', 'git_server_url', 'git_http_user', 'git_http_password',
-        'git_api_url', 'git_token', 'vllm_api_base', 'vllm_api_key', 'vllm_model_name',
-        'aider_map_tokens'].forEach(key => {
-            settings[key] = formData.get(key) || '';
-        });
+    // 文本输入 - 只包含表单中实际存在的字段
+    ['vllm_api_base', 'vllm_api_key', 'vllm_model_name', 'aider_map_tokens'].forEach(key => {
+        settings[key] = formData.get(key) || '';
+    });
 
     // 复选框（checkbox未选中时不会出现在FormData中）
-    settings['enable_comment'] = form.querySelector('[name="enable_comment"]').checked ? 'true' : 'false';
-    settings['aider_no_repo_map'] = form.querySelector('[name="aider_no_repo_map"]').checked ? 'true' : 'false';
+    settings['aider_no_repo_map'] = form.querySelector('[name="aider_no_repo_map"]')?.checked ? 'true' : 'false';
 
     // 轮询配置
     settings['trigger_mode'] = formData.get('trigger_mode') || 'webhook';
