@@ -138,10 +138,14 @@ class PollingManager:
         return [r.to_dict() for r in self._repos.values()]
     
     def get_repo(self, repo_id: str) -> Optional[dict]:
-        """获取单个仓库"""
+        """获取单个仓库（字典格式）"""
         if repo_id in self._repos:
             return self._repos[repo_id].to_dict()
         return None
+    
+    def get_repo_obj(self, repo_id: str) -> Optional[PollingRepo]:
+        """获取单个仓库对象"""
+        return self._repos.get(repo_id)
     
     @property
     def is_running(self) -> bool:

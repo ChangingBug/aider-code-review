@@ -499,7 +499,7 @@ async def get_repo_branches(request: Request):
 @app.post("/api/polling/repos/{repo_id}/clone")
 async def clone_repo(repo_id: str, background_tasks: BackgroundTasks):
     """克隆仓库到本地"""
-    repo = polling_manager.get_repo(repo_id)
+    repo = polling_manager.get_repo_obj(repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="仓库不存在")
     
@@ -511,7 +511,7 @@ async def clone_repo(repo_id: str, background_tasks: BackgroundTasks):
 @app.post("/api/polling/repos/{repo_id}/trigger")
 async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
     """手动触发仓库审查"""
-    repo = polling_manager.get_repo(repo_id)
+    repo = polling_manager.get_repo_obj(repo_id)
     if not repo:
         raise HTTPException(status_code=404, detail="仓库不存在")
     
