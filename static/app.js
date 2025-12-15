@@ -918,6 +918,18 @@ function toggleApiUrlField() {
     document.getElementById('api-url-field').style.display = enableComment ? 'block' : 'none';
 }
 
+// 触发模式切换时显示/隐藏webhook密钥字段
+function toggleTriggerModeFields() {
+    const triggerMode = document.getElementById('new-repo-trigger-mode')?.value || 'polling';
+    const webhookGroup = document.getElementById('webhook-secret-group');
+    if (webhookGroup) {
+        webhookGroup.style.display = (triggerMode === 'webhook' || triggerMode === 'both') ? 'block' : 'none';
+    }
+}
+
+// 绑定触发模式选择事件
+document.getElementById('new-repo-trigger-mode')?.addEventListener('change', toggleTriggerModeFields);
+
 // 从仓库URL推断API地址
 function inferApiUrl(repoUrl, platform) {
     try {
@@ -1061,6 +1073,8 @@ async function addRepo() {
     const pollCommits = document.getElementById('new-repo-commits').checked;
     const pollMrs = document.getElementById('new-repo-mrs').checked;
     const enableComment = document.getElementById('new-repo-enable-comment').checked;
+    const triggerMode = document.getElementById('new-repo-trigger-mode')?.value || 'polling';
+    const webhookSecret = document.getElementById('new-repo-webhook-secret')?.value || '';
 
     if (!url) {
         resultEl.className = 'test-result error';
@@ -1068,11 +1082,7 @@ async function addRepo() {
         return;
     }
 
-    if (!apiUrl) {
-        resultEl.className = 'test-result error';
-        resultEl.textContent = '请输入API地址';
-        return;
-    }
+    // API地址非必填（轮询不需要，只有评论回写需要）
 
     resultEl.className = 'test-result loading';
     resultEl.textContent = '⏳ 正在添加仓库...';
@@ -1092,7 +1102,9 @@ async function addRepo() {
                 effective_time: effectiveTime,
                 poll_commits: pollCommits,
                 poll_mrs: pollMrs,
-                enable_comment: enableComment
+                enable_comment: enableComment,
+                trigger_mode: triggerMode,
+                webhook_secret: webhookSecret
             })
         });
 

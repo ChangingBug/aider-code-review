@@ -48,6 +48,10 @@ class PollingRepo:
     enabled: bool = True          # 是否启用
     clone_status: str = ""        # 克隆状态: "" / cloning / cloned / error
     
+    # 触发模式配置
+    trigger_mode: str = "polling" # 触发模式: polling / webhook / both
+    webhook_secret: str = ""      # Webhook密钥（用于验证webhook请求）
+    
     def to_dict(self):
         return asdict(self)
     
@@ -189,11 +193,14 @@ class PollingManager:
             try:
                 interval = SettingsManager.get_int('polling_interval', 5)
                 
-                # 检查所有启用的仓库
+                # 检查所有启用的仓库（只处理轮询模式或混合模式）
                 for repo_id, repo in list(self._repos.items()):
                     if not self._running:
                         break
                     if not repo.enabled:
+                        continue
+                    # 只处理trigger_mode为polling或both的仓库
+                    if repo.trigger_mode not in ['polling', 'both']:
                         continue
                     
                     try:

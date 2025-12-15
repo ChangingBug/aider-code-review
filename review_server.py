@@ -456,6 +456,8 @@ async def add_polling_repo(request: Request):
         local_path=data.get('local_path', ''),
         effective_time=data.get('effective_time', ''),
         enabled=data.get('enabled', True),
+        trigger_mode=data.get('trigger_mode', 'polling'),
+        webhook_secret=data.get('webhook_secret', ''),
     )
     
     if not repo.url:

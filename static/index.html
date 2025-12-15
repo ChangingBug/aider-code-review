@@ -470,6 +470,23 @@
                     <small class="form-hint">只监控此时间之后的提交和MR（留空表示立即生效）</small>
                 </div>
 
+                <!-- 触发模式 -->
+                <div class="form-group">
+                    <label>触发模式</label>
+                    <select id="new-repo-trigger-mode" class="form-select">
+                        <option value="polling">🔄 轮询模式 - 定时检查新提交/MR</option>
+                        <option value="webhook">🔔 Webhook模式 - Git平台推送触发</option>
+                        <option value="both">🔄🔔 混合模式 - 同时支持两种方式</option>
+                    </select>
+                </div>
+
+                <!-- Webhook密钥（仅webhook/both模式显示） -->
+                <div class="form-group" id="webhook-secret-group" style="display: none;">
+                    <label>Webhook密钥</label>
+                    <input type="text" id="new-repo-webhook-secret" class="form-input" placeholder="用于验证webhook请求（可选）">
+                    <small class="form-hint">在Git平台配置Webhook时设置相同的密钥</small>
+                </div>
+
                 <!-- 监控配置 -->
                 <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                     <div class="form-group">
