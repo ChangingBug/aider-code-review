@@ -131,6 +131,9 @@ class PollingManager:
         self._running = True
         self._thread = threading.Thread(target=self._polling_loop, daemon=True)
         self._thread.start()
+        
+        # 持久化状态
+        SettingsManager.set('polling_enabled', 'true')
         logger.info("轮询任务已启动")
     
     def stop(self):
@@ -139,7 +142,17 @@ class PollingManager:
         if self._thread:
             self._thread.join(timeout=5)
             self._thread = None
+        
+        # 持久化状态
+        SettingsManager.set('polling_enabled', 'false')
         logger.info("轮询任务已停止")
+    
+    def auto_start_if_enabled(self, review_callback):
+        """如果之前启用了轮询，自动恢复"""
+        self.set_review_callback(review_callback)
+        if SettingsManager.get_bool('polling_enabled', False):
+            logger.info("检测到轮询状态为启用，自动恢复轮询...")
+            self.start()
     
     def _polling_loop(self):
         """轮询主循环"""

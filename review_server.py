@@ -10,6 +10,7 @@ import subprocess
 import uuid
 import json
 import re
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -829,23 +830,47 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         
         cmd.extend(valid_files)
         
-        # 5. 执行Aider并捕获输出
+        # 5. 执行Aider并捕获输出（支持重试）
+        aider_timeout = SettingsManager.get_int('aider_timeout', 600)
+        retry_count = SettingsManager.get_int('aider_retry_count', 1)
+        
         logger.info(f"执行Aider命令: {' '.join(cmd[:6])}...")
         logger.info(f"使用模型: {vllm_model_name}, API: {vllm_api_base}")
-        result = subprocess.run(
-            cmd,
-            cwd=work_dir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=600
-        )
+        logger.info(f"超时: {aider_timeout}秒, 重试次数: {retry_count}")
         
-        if result.returncode != 0:
-            logger.error(f"Aider执行失败: {result.stderr}")
+        result = None
+        last_error = None
+        for attempt in range(retry_count + 1):
+            try:
+                result = subprocess.run(
+                    cmd,
+                    cwd=work_dir,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=aider_timeout
+                )
+                
+                if result.returncode == 0:
+                    break  # 成功，退出重试循环
+                else:
+                    last_error = result.stderr
+                    if attempt < retry_count:
+                        logger.warning(f"Aider执行失败 (尝试 {attempt + 1}/{retry_count + 1}), 准备重试...")
+                        time.sleep(2)  # 等待2秒后重试
+                    
+            except subprocess.TimeoutExpired as e:
+                last_error = f"执行超时 ({aider_timeout}秒)"
+                if attempt < retry_count:
+                    logger.warning(f"任务超时 (尝试 {attempt + 1}/{retry_count + 1}), 准备重试...")
+                else:
+                    raise e
+        
+        if result and result.returncode != 0:
+            logger.error(f"Aider执行失败 (已重试{retry_count}次): {last_error}")
         
         # 6. 解析输出
-        raw_output = result.stdout + result.stderr
+        raw_output = result.stdout + result.stderr if result else ""
         review_report = parse_aider_output(raw_output)
         
         # 7. 分析问题数量
@@ -868,13 +893,15 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         logger.info(f"任务 {task_id} 完成, 发现 {total_issues} 个问题")
         
     except subprocess.TimeoutExpired:
-        logger.error(f"任务 {task_id} 超时")
+        logger.error(f"任务 {task_id} 超时 (已用尽所有重试)")
         finalize_review(task_id, start_time, None, 0, 0, 0, 0, error="任务超时")
-        post_comment_to_git(context, "⚠️ 代码审查超时，请稍后重试或减少变更文件数量。")
+        if SettingsManager.get_bool('enable_comment', True):
+            post_comment_to_git(context, "⚠️ 代码审查超时，请稍后重试或减少变更文件数量。")
     except Exception as e:
         logger.exception(f"任务 {task_id} 执行失败: {e}")
         finalize_review(task_id, start_time, None, 0, 0, 0, 0, error=str(e))
-        post_comment_to_git(context, f"❌ 代码审查执行失败: {str(e)}")
+        if SettingsManager.get_bool('enable_comment', True):
+            post_comment_to_git(context, f"❌ 代码审查执行失败: {str(e)}")
     finally:
         if os.path.exists(work_dir):
             try:
@@ -1074,6 +1101,11 @@ async def manual_review(request: Request, background_tasks: BackgroundTasks):
 
 
 # ==================== 启动入口 ====================
+
+@app.on_event("startup")
+async def startup_event():
+    """服务启动时自动恢复轮询状态"""
+    polling_manager.auto_start_if_enabled(run_aider_review)
 
 if __name__ == "__main__":
     import uvicorn

@@ -856,6 +856,8 @@ function togglePollingUI() {
 
 // ==================== 初始化 ====================
 
+let pollingRefreshInterval = null;
+
 document.addEventListener('DOMContentLoaded', () => {
     navigateTo('overview');
 
@@ -865,4 +867,11 @@ document.addEventListener('DOMContentLoaded', () => {
             loadPageData(currentPage);
         }
     }, 30000);
+
+    // 在设置页面，每10秒刷新轮询状态
+    setInterval(() => {
+        if (currentPage === 'settings') {
+            loadPollingData();
+        }
+    }, 10000);
 });
