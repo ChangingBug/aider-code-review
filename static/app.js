@@ -871,6 +871,7 @@ async function addRepo() {
     const localPath = document.getElementById('new-repo-local-path').value.trim();
     const pollCommits = document.getElementById('new-repo-commits').checked;
     const pollMrs = document.getElementById('new-repo-mrs').checked;
+    const enableComment = document.getElementById('new-repo-enable-comment').checked;
 
     if (!url) {
         resultEl.className = 'test-result error';
@@ -893,7 +894,8 @@ async function addRepo() {
                 token, http_user: httpUser, http_password: httpPassword,
                 local_path: localPath,
                 poll_commits: pollCommits,
-                poll_mrs: pollMrs
+                poll_mrs: pollMrs,
+                enable_comment: enableComment
             })
         });
 

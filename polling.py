@@ -37,6 +37,7 @@ class PollingRepo:
     strategy: str = "commit"      # 审查策略: commit / mr
     poll_commits: bool = True     # 是否轮询新提交
     poll_mrs: bool = False        # 是否轮询新MR
+    enable_comment: bool = True   # 是否启用评论回写
     
     # 状态信息
     last_commit_id: str = ""      # 上次检查的commit ID
@@ -440,6 +441,11 @@ class PollingManager:
             'author_name': item.get('author', 'Polling'),
             'author_email': '',
             'local_path': repo.get_local_path(),  # 使用仓库配置的存储路径
+            'enable_comment': repo.enable_comment,  # 仓库级评论开关
+            # 仓库级认证信息（用于评论回写）
+            'repo_token': repo.token,
+            'repo_http_user': repo.http_user,
+            'repo_http_password': repo.http_password,
         }
         
         if strategy == 'commit':

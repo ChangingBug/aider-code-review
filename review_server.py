@@ -942,8 +942,9 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
         formatted_report = format_review_comment(review_report, strategy, context)
         finalize_review(task_id, start_time, formatted_report, total_issues, critical, warning, suggestion, quality_score)
         
-        # 9. 回写评论（根据开关决定）
-        if SettingsManager.get_bool('enable_comment', True):
+        # 9. 回写评论（优先使用仓库级开关，fallback到全局配置）
+        enable_comment = context.get('enable_comment', SettingsManager.get_bool('enable_comment', True))
+        if enable_comment:
             post_comment_to_git(context, formatted_report)
         else:
             logger.info("评论回写已禁用，跳过")
@@ -953,12 +954,14 @@ def run_aider_review(repo_url: str, branch: str, strategy: str, context: dict):
     except subprocess.TimeoutExpired:
         logger.error(f"任务 {task_id} 超时 (已用尽所有重试)")
         finalize_review(task_id, start_time, None, 0, 0, 0, 0, error="任务超时")
-        if SettingsManager.get_bool('enable_comment', True):
+        enable_comment = context.get('enable_comment', SettingsManager.get_bool('enable_comment', True))
+        if enable_comment:
             post_comment_to_git(context, "⚠️ 代码审查超时，请稍后重试或减少变更文件数量。")
     except Exception as e:
         logger.exception(f"任务 {task_id} 执行失败: {e}")
         finalize_review(task_id, start_time, None, 0, 0, 0, 0, error=str(e))
-        if SettingsManager.get_bool('enable_comment', True):
+        enable_comment = context.get('enable_comment', SettingsManager.get_bool('enable_comment', True))
+        if enable_comment:
             post_comment_to_git(context, f"❌ 代码审查执行失败: {str(e)}")
     finally:
         if os.path.exists(work_dir):
@@ -1008,11 +1011,11 @@ def post_comment_to_git(context: dict, report: str):
     """回写评论到Git平台"""
     platform = context.get('platform', 'gitlab')
     
-    # 获取认证信息
+    # 优先使用仓库级认证信息，fallback到全局配置
     settings = SettingsManager.get_all()
-    token = settings.get('git_token', '')
-    http_user = settings.get('git_http_user', '')
-    http_password = settings.get('git_http_password', '')
+    token = context.get('repo_token', '') or settings.get('git_token', '')
+    http_user = context.get('repo_http_user', '') or settings.get('git_http_user', '')
+    http_password = context.get('repo_http_password', '') or settings.get('git_http_password', '')
     api_url = settings.get('git_api_url', '')
     
     if not api_url:

@@ -257,55 +257,26 @@
                 </div>
 
                 <form id="settings-form">
-                    <!-- Git 配置 -->
+                    <!-- Git 配置 (简化版 - 仅保留必要的全局配置) -->
                     <div class="settings-card">
-                        <h3 class="settings-title">🔗 Git 平台配置</h3>
+                        <h3 class="settings-title">🔗 Git API 配置</h3>
                         <div class="settings-grid">
                             <div class="form-group">
-                                <label>平台类型</label>
-                                <select name="git_platform" class="form-input">
-                                    <option value="gitlab">GitLab</option>
-                                    <option value="gitea">Gitea</option>
-                                    <option value="github">GitHub</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>服务器地址</label>
+                                <label>Git服务器地址</label>
                                 <input type="text" name="git_server_url" class="form-input"
                                     placeholder="http://code.example.com">
-                            </div>
-                            <div class="form-group">
-                                <label>HTTP用户名</label>
-                                <input type="text" name="git_http_user" class="form-input" placeholder="用于克隆仓库">
-                            </div>
-                            <div class="form-group">
-                                <label>HTTP密码</label>
-                                <input type="password" name="git_http_password" class="form-input" placeholder="用于克隆仓库">
+                                <small class="form-hint">用于URL转换</small>
                             </div>
                             <div class="form-group">
                                 <label>API地址</label>
                                 <input type="text" name="git_api_url" class="form-input"
                                     placeholder="http://code.example.com/api/v4">
-                            </div>
-                            <div class="form-group">
-                                <label>API Token</label>
-                                <input type="password" name="git_token" class="form-input" placeholder="用于回写评论">
-                            </div>
-                            <div class="form-group full-width">
-                                <label class="toggle-label">
-                                    <input type="checkbox" name="enable_comment" class="toggle-input" checked>
-                                    <span class="toggle-switch"></span>
-                                    <span>启用评论回写</span>
-                                </label>
-                                <small class="form-hint">关闭后将不会在Git平台发布审查评论</small>
-                            </div>
-                            <div class="form-group full-width">
-                                <button type="button" class="btn btn-test" onclick="testGitConnection()">
-                                    🔗 测试连接
-                                </button>
-                                <span id="git-test-result" class="test-result"></span>
+                                <small class="form-hint">用于查询分支和提交信息</small>
                             </div>
                         </div>
+                        <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">
+                            💡 Git平台类型、认证信息、评论开关已移至「监控仓库」单独配置
+                        </p>
                     </div>
 
                     <!-- vLLM 配置 -->
@@ -498,7 +469,7 @@
                 </div>
 
                 <!-- 监控配置 -->
-                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                     <div class="form-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
@@ -511,6 +482,13 @@
                             <input type="checkbox" id="new-repo-mrs" class="toggle-input">
                             <span class="toggle-switch"></span>
                             <span>轮询新MR</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-enable-comment" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>评论回写</span>
                         </label>
                     </div>
                 </div>
