@@ -59,8 +59,44 @@ def parse_aider_output(raw_output: str) -> str:
 def filter_valid_files(files: List[str], valid_extensions: List[str]) -> List[str]:
     """
     过滤有效的代码文件
+    排除第三方库、node_modules、vendor等目录
     """
-    return [f for f in files if any(f.endswith(ext) for ext in valid_extensions)]
+    # 排除的目录模式
+    EXCLUDED_DIRS = [
+        'node_modules/', 'vendor/', 'lib/', 'libs/', 'plugins/',
+        '.git/', '.svn/', 'dist/', 'build/', 'target/',
+        '__pycache__/', '.cache/', '.vscode/', '.idea/',
+        'static/platform/', 'static/lib/', 'static/vendor/',
+    ]
+    
+    # 排除的文件模式
+    EXCLUDED_FILES = [
+        '.min.js', '.min.css', '.bundle.js', '.chunk.js',
+        'jquery', 'bootstrap', 'vue.js', 'react.', 'angular.',
+        'lodash', 'moment', 'axios', 'echarts',
+        '.map', '.lock', 'package-lock.json', 'yarn.lock',
+    ]
+    
+    result = []
+    for f in files:
+        # 检查扩展名
+        if not any(f.endswith(ext) for ext in valid_extensions):
+            continue
+        
+        # 检查排除目录
+        f_lower = f.lower()
+        if any(excl in f_lower for excl in EXCLUDED_DIRS):
+            logger.debug(f"排除库目录文件: {f}")
+            continue
+        
+        # 检查排除文件模式
+        if any(excl in f_lower for excl in EXCLUDED_FILES):
+            logger.debug(f"排除库文件: {f}")
+            continue
+        
+        result.append(f)
+    
+    return result
 
 
 def format_review_comment(report: str, strategy: str, context: dict) -> str:
