@@ -727,9 +727,17 @@ function renderReposList(repos) {
                     ${repo.poll_commits ? '✓提交' : ''} 
                     ${repo.poll_mrs ? '✓MR' : ''} |
                     ${repo.enabled ? '🟢启用' : '🔴禁用'}
+                    ${repo.clone_status ? ` | 克隆: ${repo.clone_status === 'cloned' ? '✓完成' : repo.clone_status === 'cloning' ? '⏳进行中' : '❌失败'}` : ''}
+                    ${repo.last_check_time ? ` | 上次检查: ${formatTime(repo.last_check_time)}` : ''}
                 </div>
             </div>
             <div class="repo-actions">
+                <button class="btn btn-primary btn-sm" onclick="triggerRepoReview('${repo.id}')" title="立即审查">
+                    🚀
+                </button>
+                <button class="btn btn-test btn-sm" onclick="showEditRepoModal('${repo.id}')" title="编辑">
+                    ✏️
+                </button>
                 <button class="btn btn-test btn-sm" onclick="toggleRepoEnabled('${repo.id}', ${!repo.enabled})">
                     ${repo.enabled ? '禁用' : '启用'}
                 </button>
@@ -739,6 +747,18 @@ function renderReposList(repos) {
             </div>
         </div>
     `).join('');
+}
+
+// 格式化时间
+function formatTime(isoString) {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diff = (now - date) / 1000 / 60; // 分钟
+    if (diff < 1) return '刚刚';
+    if (diff < 60) return `${Math.floor(diff)}分钟前`;
+    if (diff < 24 * 60) return `${Math.floor(diff / 60)}小时前`;
+    return date.toLocaleDateString();
 }
 
 // 显示添加仓库模态框
@@ -1031,6 +1051,139 @@ async function toggleRepoEnabled(repoId, enabled) {
         }
     } catch (error) {
         console.error('更新失败:', error);
+    }
+}
+
+// 手动触发仓库审查
+async function triggerRepoReview(repoId) {
+    if (!confirm('确定要立即触发审查吗？这将审查该仓库的最新提交。')) return;
+
+    try {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = '⏳';
+
+        const response = await fetch(`/api/polling/repos/${repoId}/trigger`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert('✓ ' + result.message);
+        } else {
+            alert('触发失败: ' + (result.detail || '未知错误'));
+        }
+    } catch (error) {
+        console.error('触发失败:', error);
+        alert('触发失败: ' + error.message);
+    } finally {
+        loadPollingData();
+    }
+}
+
+// 当前编辑的仓库数据
+let editingRepoData = null;
+
+// 显示编辑仓库模态框
+async function showEditRepoModal(repoId) {
+    try {
+        // 获取仓库列表找到目标仓库
+        const response = await fetch('/api/polling/repos');
+        const data = await response.json();
+        const repo = data.repos.find(r => r.id === repoId);
+
+        if (!repo) {
+            alert('未找到仓库');
+            return;
+        }
+
+        editingRepoData = repo;
+
+        // 填充编辑表单
+        document.getElementById('edit-repo-id').value = repo.id;
+        document.getElementById('edit-repo-name').value = repo.name || '';
+        document.getElementById('edit-repo-url').value = repo.url || '';
+        document.getElementById('edit-repo-branch').value = repo.branch || 'main';
+        document.getElementById('edit-repo-platform').value = repo.platform || 'gitlab';
+        document.getElementById('edit-repo-auth-type').value = repo.auth_type || 'http_basic';
+        document.getElementById('edit-repo-http-user').value = repo.http_user || '';
+        document.getElementById('edit-repo-http-password').value = repo.http_password || '';
+        document.getElementById('edit-repo-token').value = repo.token || '';
+        document.getElementById('edit-repo-api-url').value = repo.api_url || '';
+        document.getElementById('edit-repo-commits').checked = repo.poll_commits !== false;
+        document.getElementById('edit-repo-mrs').checked = repo.poll_mrs === true;
+        document.getElementById('edit-repo-enable-comment').checked = repo.enable_comment !== false;
+
+        // 切换认证字段显示
+        toggleEditAuthFields();
+
+        // 显示模态框
+        document.getElementById('edit-repo-modal').classList.add('active');
+    } catch (error) {
+        console.error('获取仓库信息失败:', error);
+        alert('获取仓库信息失败');
+    }
+}
+
+// 关闭编辑模态框
+function closeEditRepoModal() {
+    document.getElementById('edit-repo-modal').classList.remove('active');
+    editingRepoData = null;
+}
+
+// 切换编辑表单认证字段显示
+function toggleEditAuthFields() {
+    const authType = document.getElementById('edit-repo-auth-type').value;
+    document.getElementById('edit-http-auth-fields').style.display = authType === 'http_basic' ? 'grid' : 'none';
+    document.getElementById('edit-token-auth-fields').style.display = authType === 'token' ? 'block' : 'none';
+}
+
+// 保存编辑的仓库
+async function saveEditedRepo() {
+    const repoId = document.getElementById('edit-repo-id').value;
+    const resultEl = document.getElementById('edit-repo-result');
+
+    const updates = {
+        name: document.getElementById('edit-repo-name').value.trim(),
+        url: document.getElementById('edit-repo-url').value.trim(),
+        branch: document.getElementById('edit-repo-branch').value.trim(),
+        platform: document.getElementById('edit-repo-platform').value,
+        auth_type: document.getElementById('edit-repo-auth-type').value,
+        http_user: document.getElementById('edit-repo-http-user').value,
+        http_password: document.getElementById('edit-repo-http-password').value,
+        token: document.getElementById('edit-repo-token').value,
+        api_url: document.getElementById('edit-repo-api-url').value.trim(),
+        poll_commits: document.getElementById('edit-repo-commits').checked,
+        poll_mrs: document.getElementById('edit-repo-mrs').checked,
+        enable_comment: document.getElementById('edit-repo-enable-comment').checked,
+    };
+
+    resultEl.className = 'test-result loading';
+    resultEl.textContent = '⏳ 正在保存...';
+
+    try {
+        const response = await fetch(`/api/polling/repos/${repoId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+
+        if (response.ok) {
+            resultEl.className = 'test-result success';
+            resultEl.textContent = '✓ 保存成功';
+            setTimeout(() => {
+                closeEditRepoModal();
+                loadPollingData();
+            }, 1000);
+        } else {
+            const error = await response.json();
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '保存失败: ' + (error.detail || '未知错误');
+        }
+    } catch (error) {
+        resultEl.className = 'test-result error';
+        resultEl.textContent = '保存失败: ' + error.message;
     }
 }
 

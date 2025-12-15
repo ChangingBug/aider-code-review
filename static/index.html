@@ -500,6 +500,113 @@
         </div>
     </div>
 
+    <!-- 编辑仓库模态框 -->
+    <div class="modal-overlay" id="edit-repo-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">✏️ 编辑仓库</h3>
+                <button class="modal-close" onclick="closeEditRepoModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-repo-id">
+
+                <!-- 基本信息 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>仓库名称</label>
+                        <input type="text" id="edit-repo-name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>分支</label>
+                        <input type="text" id="edit-repo-branch" class="form-input">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>仓库URL</label>
+                    <input type="text" id="edit-repo-url" class="form-input">
+                </div>
+
+                <!-- 平台和认证 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>Git平台</label>
+                        <select id="edit-repo-platform" class="form-input">
+                            <option value="gitlab">GitLab</option>
+                            <option value="gitea">Gitea</option>
+                            <option value="github">GitHub</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>鉴权方式</label>
+                        <select id="edit-repo-auth-type" class="form-input" onchange="toggleEditAuthFields()">
+                            <option value="http_basic">用户名/密码</option>
+                            <option value="token">API Token</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- HTTP认证 -->
+                <div id="edit-http-auth-fields" class="settings-grid"
+                    style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label>HTTP用户名</label>
+                        <input type="text" id="edit-repo-http-user" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>HTTP密码</label>
+                        <input type="password" id="edit-repo-http-password" class="form-input">
+                    </div>
+                </div>
+
+                <!-- Token认证 -->
+                <div id="edit-token-auth-fields" class="form-group" style="display: none;">
+                    <label>API Token</label>
+                    <input type="password" id="edit-repo-token" class="form-input">
+                </div>
+
+                <!-- API地址 -->
+                <div class="form-group">
+                    <label>API地址</label>
+                    <input type="text" id="edit-repo-api-url" class="form-input" placeholder="用于评论回写">
+                </div>
+
+                <!-- 监控配置 -->
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="edit-repo-commits" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>轮询提交</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="edit-repo-mrs" class="toggle-input">
+                            <span class="toggle-switch"></span>
+                            <span>轮询MR</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="edit-repo-enable-comment" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>评论回写</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 结果 -->
+                <div id="edit-repo-result" class="test-result" style="margin-top: 12px;"></div>
+
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="button" class="btn btn-test" onclick="closeEditRepoModal()">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEditedRepo()">💾 保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 审查详情模态框 -->
     <div class="modal-overlay" id="review-modal">
         <div class="modal">

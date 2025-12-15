@@ -508,6 +508,59 @@ async def clone_repo(repo_id: str, background_tasks: BackgroundTasks):
     return result
 
 
+@app.post("/api/polling/repos/{repo_id}/trigger")
+async def trigger_repo_review(repo_id: str, background_tasks: BackgroundTasks):
+    """手动触发仓库审查"""
+    repo = polling_manager.get_repo(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+    
+    if not repo.enabled:
+        raise HTTPException(status_code=400, detail="仓库已禁用")
+    
+    # 构建审查context
+    from utils import convert_to_http_auth_url
+    settings = SettingsManager.get_all()
+    git_server_url = settings.get('git_server_url', '')
+    
+    # 转换认证URL
+    clone_url = repo.url
+    if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
+        clone_url = convert_to_http_auth_url(
+            repo.url,
+            repo.http_user,
+            repo.http_password,
+            git_server_url
+        )
+    
+    # 从URL提取项目路径
+    project_path = polling_manager._extract_project_path(repo.url, repo.platform)
+    path_parts = project_path.split('/') if project_path else []
+    
+    context = {
+        'strategy': 'commit',
+        'platform': repo.platform,
+        'project_id': project_path,
+        'project_name': repo.name,
+        'repo_owner': path_parts[0] if len(path_parts) >= 2 else '',
+        'repo_name': path_parts[-1] if path_parts else repo.name,
+        'author_name': 'Manual Trigger',
+        'author_email': '',
+        'local_path': repo.get_local_path(),
+        'enable_comment': repo.enable_comment,
+        'repo_token': repo.token,
+        'repo_http_user': repo.http_user,
+        'repo_http_password': repo.http_password,
+        'repo_api_url': repo.api_url,
+        'commit_id': 'HEAD',  # 审查最新提交
+    }
+    
+    # 后台执行审查
+    background_tasks.add_task(run_aider_review, clone_url, repo.branch, 'commit', context)
+    
+    return {"status": "triggered", "repo_id": repo_id, "message": "审查任务已提交"}
+
+
 @app.post("/api/polling/parse-url")
 async def parse_repo_url(request: Request):
     """解析仓库URL获取名称"""
