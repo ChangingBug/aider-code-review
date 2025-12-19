@@ -96,6 +96,7 @@ class PollingManager:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._repos: Dict[str, PollingRepo] = {}
+        self._repos_lock = threading.RLock()  # 保护_repos的线程锁
         self._review_callback: Optional[Callable] = None
         self._load_repos()
     
@@ -108,55 +109,65 @@ class PollingManager:
         repos_json = SettingsManager.get('polling_repos', '[]')
         try:
             repos_list = json.loads(repos_json)
-            self._repos = {r['id']: PollingRepo.from_dict(r) for r in repos_list}
-        except (json.JSONDecodeError, KeyError):
-            self._repos = {}
+            with self._repos_lock:
+                self._repos = {r['id']: PollingRepo.from_dict(r) for r in repos_list}
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"加载仓库配置失败: {e}")
+            with self._repos_lock:
+                self._repos = {}
     
     def _save_repos(self):
         """保存仓库配置到数据库"""
-        repos_list = [r.to_dict() for r in self._repos.values()]
+        with self._repos_lock:
+            repos_list = [r.to_dict() for r in self._repos.values()]
         SettingsManager.set('polling_repos', json.dumps(repos_list, ensure_ascii=False))
     
     def add_repo(self, repo: PollingRepo) -> bool:
         """添加仓库"""
-        self._repos[repo.id] = repo
+        with self._repos_lock:
+            self._repos[repo.id] = repo
         self._save_repos()
         logger.info(f"添加轮询仓库: {repo.name} ({repo.url})")
         return True
     
     def remove_repo(self, repo_id: str) -> bool:
         """删除仓库"""
-        if repo_id in self._repos:
-            repo = self._repos.pop(repo_id)
-            self._save_repos()
-            logger.info(f"删除轮询仓库: {repo.name}")
-            return True
+        with self._repos_lock:
+            if repo_id in self._repos:
+                repo = self._repos.pop(repo_id)
+                self._save_repos()
+                logger.info(f"删除轮询仓库: {repo.name}")
+                return True
         return False
     
     def update_repo(self, repo_id: str, updates: dict) -> bool:
         """更新仓库配置"""
-        if repo_id in self._repos:
-            repo = self._repos[repo_id]
-            for key, value in updates.items():
-                if hasattr(repo, key):
-                    setattr(repo, key, value)
-            self._save_repos()
-            return True
+        with self._repos_lock:
+            if repo_id in self._repos:
+                repo = self._repos[repo_id]
+                for key, value in updates.items():
+                    if hasattr(repo, key):
+                        setattr(repo, key, value)
+                self._save_repos()
+                return True
         return False
     
     def get_repos(self) -> List[dict]:
         """获取所有仓库"""
-        return [r.to_dict() for r in self._repos.values()]
+        with self._repos_lock:
+            return [r.to_dict() for r in self._repos.values()]
     
     def get_repo(self, repo_id: str) -> Optional[dict]:
         """获取单个仓库（字典格式）"""
-        if repo_id in self._repos:
-            return self._repos[repo_id].to_dict()
+        with self._repos_lock:
+            if repo_id in self._repos:
+                return self._repos[repo_id].to_dict()
         return None
     
     def get_repo_obj(self, repo_id: str) -> Optional[PollingRepo]:
         """获取单个仓库对象"""
-        return self._repos.get(repo_id)
+        with self._repos_lock:
+            return self._repos.get(repo_id)
     
     @property
     def is_running(self) -> bool:
@@ -200,8 +211,12 @@ class PollingManager:
             try:
                 interval = SettingsManager.get_int('polling_interval', 5)
                 
+                # 获取仓库列表快照（线程安全）
+                with self._repos_lock:
+                    repos_snapshot = list(self._repos.values())
+                
                 # 检查所有启用的仓库（只处理轮询模式或混合模式）
-                for repo_id, repo in list(self._repos.items()):
+                for repo in repos_snapshot:
                     if not self._running:
                         break
                     if not repo.enabled:
@@ -213,7 +228,7 @@ class PollingManager:
                     try:
                         self._check_repo(repo)
                     except Exception as e:
-                        logger.error(f"检查仓库 {repo.name} 失败: {e}")
+                        logger.error(f"检查仓库 {repo.name} 失败: {e}", exc_info=True)
                 
                 # 等待下一次轮询
                 for _ in range(interval * 60):
@@ -222,7 +237,7 @@ class PollingManager:
                     time.sleep(1)
                     
             except Exception as e:
-                logger.error(f"轮询循环异常: {e}")
+                logger.error(f"轮询循环异常: {e}", exc_info=True)
                 time.sleep(10)
     
     def _check_repo(self, repo: PollingRepo):

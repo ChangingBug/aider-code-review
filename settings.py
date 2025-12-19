@@ -30,16 +30,16 @@ class SystemSetting(SettingsBase):
 DEFAULT_SETTINGS = {
     # Git 配置
     "git_platform": {"value": "gitlab", "category": "git", "description": "Git平台类型 (gitlab/gitea/github)"},
-    "git_server_url": {"value": "http://code.kf.zjnx.net", "category": "git", "description": "Git服务器地址"},
+    "git_server_url": {"value": "", "category": "git", "description": "Git服务器地址"},
     "git_http_user": {"value": "", "category": "git", "description": "HTTP认证用户名"},
     "git_http_password": {"value": "", "category": "git", "description": "HTTP认证密码"},
-    "git_api_url": {"value": "http://code.kf.zjnx.net/api/v4", "category": "git", "description": "Git API地址"},
+    "git_api_url": {"value": "", "category": "git", "description": "Git API地址"},
     "git_token": {"value": "", "category": "git", "description": "Git访问令牌"},
     "enable_comment": {"value": "true", "category": "git", "description": "是否回写评论到Git"},
     
     # vLLM 配置
-    "vllm_api_base": {"value": "http://192.168.1.100:8000/v1", "category": "vllm", "description": "vLLM API地址"},
-    "vllm_api_key": {"value": "sk-xxx", "category": "vllm", "description": "vLLM API密钥"},
+    "vllm_api_base": {"value": "http://localhost:8000/v1", "category": "vllm", "description": "vLLM API地址"},
+    "vllm_api_key": {"value": "", "category": "vllm", "description": "vLLM API密钥"},
     "vllm_model_name": {"value": "openai/qwen-2.5-coder-32b", "category": "vllm", "description": "模型名称"},
     
     # Aider 配置
