@@ -900,7 +900,7 @@ function toggleAuthFields() {
     document.getElementById('token-auth-fields').style.display = authType === 'token' ? 'block' : 'none';
 }
 
-// 平台切换时重新推断API地址
+// 平台切换时重新推断API地址和更新Webhook URL
 function onPlatformChange() {
     const url = document.getElementById('new-repo-url').value.trim();
     if (url) {
@@ -910,6 +910,8 @@ function onPlatformChange() {
             document.getElementById('new-repo-api-url').value = apiUrl;
         }
     }
+    // 更新Webhook URL
+    updateWebhookUrl();
 }
 
 // 评论开关与API地址字段联动
@@ -939,6 +941,41 @@ function toggleTriggerModeFields() {
     // Webhook配置：webhook/both模式显示
     if (webhookConfigGroup) {
         webhookConfigGroup.style.display = (triggerMode === 'webhook' || triggerMode === 'both') ? 'block' : 'none';
+
+        // 生成Webhook URL
+        if (triggerMode === 'webhook' || triggerMode === 'both') {
+            updateWebhookUrl();
+        }
+    }
+}
+
+// 更新Webhook URL显示
+function updateWebhookUrl() {
+    const platform = document.getElementById('new-repo-platform')?.value || 'gitlab';
+    const webhookUrlDisplay = document.getElementById('webhook-url-display');
+
+    if (webhookUrlDisplay) {
+        // 获取当前服务器地址
+        const baseUrl = window.location.origin;
+        const webhookUrl = `${baseUrl}/api/webhook/${platform}`;
+        webhookUrlDisplay.value = webhookUrl;
+    }
+}
+
+// 复制Webhook URL
+function copyWebhookUrl() {
+    const webhookUrlDisplay = document.getElementById('webhook-url-display');
+    if (webhookUrlDisplay) {
+        webhookUrlDisplay.select();
+        document.execCommand('copy');
+
+        // 显示复制成功提示
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '✓ 已复制';
+        setTimeout(() => {
+            btn.textContent = originalText;
+        }, 1500);
     }
 }
 

@@ -319,31 +319,22 @@
                         </div>
                     </div>
 
-                    <!-- 轮询配置 -->
+                    <!-- 监控仓库管理 -->
                     <div class="settings-card">
-                        <h3 class="settings-title">🔄 触发模式配置</h3>
-                        <div class="settings-grid">
-                            <div class="form-group">
-                                <label>触发模式</label>
-                                <select name="trigger_mode" class="form-input" onchange="togglePollingUI()">
-                                    <option value="webhook">Webhook (推送触发)</option>
-                                    <option value="polling">轮询 (定时检查)</option>
-                                </select>
-                                <small class="form-hint">Webhook需要Git平台支持，轮询主动检查仓库</small>
-                            </div>
-                            <div class="form-group">
-                                <label>轮询间隔(分钟)</label>
-                                <input type="number" name="polling_interval" class="form-input" placeholder="5" min="1"
-                                    max="60">
-                            </div>
-                        </div>
+                        <h3 class="settings-title">📦 监控仓库列表</h3>
 
-                        <!-- 轮询仓库管理 -->
-                        <div id="polling-repos-section" style="margin-top: 20px;">
+                        <!-- 仓库列表 -->
+                        <div id="polling-repos-section">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                <h4 style="margin: 0; color: var(--text-secondary);">📦 监控仓库列表</h4>
-                                <button type="button" class="btn btn-test" onclick="showAddRepoModal()">
+                                <div style="display: flex; align-items: center; gap: 16px;">
+                                    <span style="color: var(--text-secondary); font-size: 14px;">
+                                        轮询间隔: <input type="number" name="polling_interval" class="form-input"
+                                            style="width: 60px; display: inline-block; padding: 4px 8px;"
+                                            placeholder="5" min="1" max="60" value="5"> 分钟
+                                    </span>
+                                </div>
+                                <button type="button" class="btn btn-primary" onclick="showAddRepoModal()">
                                     ➕ 添加仓库
                                 </button>
                             </div>
@@ -354,7 +345,7 @@
 
                         <!-- 轮询控制 -->
                         <div class="form-group full-width" style="margin-top: 16px;">
-                            <button type="button" class="btn btn-primary" id="polling-toggle-btn"
+                            <button type="button" class="btn btn-test" id="polling-toggle-btn"
                                 onclick="togglePolling()">
                                 ▶️ 启动轮询
                             </button>
@@ -511,6 +502,22 @@
                 <!-- Webhook模式配置（仅webhook/both模式显示） -->
                 <div id="webhook-config-group" style="display: none;">
                     <h5 style="margin: 16px 0 12px; color: var(--text-secondary); font-size: 13px;">🔔 Webhook模式配置</h5>
+
+                    <!-- Webhook URL提示 -->
+                    <div class="form-group"
+                        style="background: var(--bg-hover); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                        <label style="color: var(--primary);">📌 Webhook URL（在Git平台配置此地址）</label>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                            <input type="text" id="webhook-url-display" class="form-input"
+                                style="flex: 1; font-family: monospace; font-size: 12px;" readonly>
+                            <button type="button" class="btn btn-test" onclick="copyWebhookUrl()"
+                                style="white-space: nowrap;">
+                                📋 复制
+                            </button>
+                        </div>
+                        <small class="form-hint">将此URL配置到Git平台（GitLab/Gitea/GitHub）的Webhook设置中</small>
+                    </div>
+
                     <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
                         <div class="form-group">
                             <label class="toggle-label">
