@@ -48,6 +48,58 @@ app = FastAPI(
 # 初始化数据库
 init_database()
 
+# ==================== 中间件和异常处理 ====================
+
+from fastapi.middleware.cors import CORSMiddleware
+from collections import defaultdict
+import asyncio
+
+# CORS中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 简单的请求速率限制（内存存储，适合单实例）
+request_counts = defaultdict(lambda: {"count": 0, "reset_time": 0})
+RATE_LIMIT = 100  # 每分钟最大请求数
+RATE_WINDOW = 60  # 时间窗口（秒）
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """简单的速率限制中间件"""
+    client_ip = request.client.host if request.client else "unknown"
+    current_time = time.time()
+    
+    # 重置计数器
+    if current_time > request_counts[client_ip]["reset_time"]:
+        request_counts[client_ip] = {"count": 0, "reset_time": current_time + RATE_WINDOW}
+    
+    # 检查速率限制（排除静态文件和健康检查）
+    path = request.url.path
+    if not path.startswith("/static") and path != "/health":
+        request_counts[client_ip]["count"] += 1
+        if request_counts[client_ip]["count"] > RATE_LIMIT:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "请求过于频繁，请稍后重试"}
+            )
+    
+    response = await call_next(request)
+    return response
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """全局异常处理器"""
+    logger.error(f"未处理的异常: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误，请查看日志"}
+    )
+
 # 挂载静态文件
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
 if os.path.exists(STATIC_DIR):
