@@ -79,6 +79,26 @@ cd ai_code_review
 docker-compose up -d
 ```
 
+**方式三：使用 Python 虚拟环境（开发/调试）**
+
+```bash
+# 1. 创建虚拟环境
+python -m venv venv
+
+# 2. 激活虚拟环境
+# Windows:
+.\venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# 3. 安装依赖
+pip install -r requirements.txt
+
+# 4. 启动服务
+python -m uvicorn review_server:app --host 0.0.0.0 --port 5000
+```
+
+
 ### 3. 配置系统参数
 
 启动后访问 `http://<server_ip>:5000/`，点击 **⚙️ 系统设置**：
