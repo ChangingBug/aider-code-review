@@ -82,8 +82,14 @@ class ReviewRecord(Base):
     completed_at = Column(DateTime)
     processing_time_seconds = Column(Float)
     
+    # 批次进度信息（新增）
+    batch_total = Column(Integer, default=1)  # 总批次数
+    batch_current = Column(Integer, default=0)  # 当前批次
+    batch_results = Column(Text)  # JSON: 每批次结果摘要
+    
     # 错误信息
     error_message = Column(Text)
+
     
     # 关联的问题详情
     issues = relationship("ReviewIssue", back_populates="review", cascade="all, delete-orphan")
@@ -113,7 +119,12 @@ class ReviewRecord(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'processing_time_seconds': self.processing_time_seconds,
+            # 批次进度
+            'batch_total': self.batch_total or 1,
+            'batch_current': self.batch_current or 0,
+            'batch_results': self.batch_results,
         }
+
 
 
 class ReviewIssue(Base):

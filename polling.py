@@ -12,7 +12,7 @@ from dataclasses import dataclass, asdict
 import requests
 
 from settings import SettingsManager
-from utils import logger, convert_to_http_auth_url
+from utils import logger, convert_to_http_auth_url, extract_project_path
 
 
 @dataclass
@@ -44,6 +44,9 @@ class PollingRepo:
     webhook_commits: bool = True  # Webhook是否响应Push事件
     webhook_mrs: bool = True      # Webhook是否响应MR事件
     webhook_branches: str = ""    # Webhook监控的分支（逗号分隔，空表示所有分支）
+    
+    # 轮询时间配置
+    polling_interval: int = 5     # 轮询间隔（分钟）
     
     # 通用配置
     enable_comment: bool = True   # 是否启用评论回写
@@ -93,12 +96,16 @@ class PollingManager:
             return
         
         self._initialized = True
-        self._running = False
+        self._running = True  # 现在默认常驻运行
         self._thread: Optional[threading.Thread] = None
         self._repos: Dict[str, PollingRepo] = {}
-        self._repos_lock = threading.RLock()  # 保护_repos的线程锁
+        self._repos_lock = threading.RLock()
         self._review_callback: Optional[Callable] = None
+        self._last_poll_times: Dict[str, float] = {}
         self._load_repos()
+        
+        # 自动启动后台线程
+        self.start()
     
     def set_review_callback(self, callback: Callable):
         """设置审查回调函数"""
@@ -122,13 +129,63 @@ class PollingManager:
             repos_list = [r.to_dict() for r in self._repos.values()]
         SettingsManager.set('polling_repos', json.dumps(repos_list, ensure_ascii=False))
     
-    def add_repo(self, repo: PollingRepo) -> bool:
-        """添加仓库"""
+    def add_repo(self, repo: PollingRepo, verify: bool = False) -> bool:
+        """
+        添加仓库
+        :param repo: 仓库配置对象
+        :param verify: 是否在添加前验证连接
+        """
+        if verify:
+            success, error = self.test_connectivity(repo)
+            if not success:
+                logger.error(f"验证仓库连接失败: {error}")
+                return False
+
         with self._repos_lock:
             self._repos[repo.id] = repo
         self._save_repos()
         logger.info(f"添加轮询仓库: {repo.name} ({repo.url})")
         return True
+
+    def test_connectivity(self, repo: PollingRepo) -> tuple[bool, str]:
+        """
+        测试仓库连通性
+        :return: (是否成功, 错误信息)
+        """
+        import subprocess
+        
+        try:
+            settings = SettingsManager.get_all()
+            git_server_url = settings.get('git_server_url', '')
+            
+            auth_url = repo.url
+            if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    http_user=repo.http_user,
+                    http_password=repo.http_password,
+                    server_url=git_server_url
+                )
+            elif repo.auth_type == 'token' and repo.token:
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    token=repo.token,
+                    server_url=git_server_url
+                )
+            
+            # 使用 git ls-remote 验证连接
+            cmd = ['git', 'ls-remote', '-h', auth_url, 'HEAD']
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            
+            if result.returncode == 0:
+                return True, ""
+            else:
+                return False, result.stderr or "未知错误"
+                
+        except subprocess.TimeoutExpired:
+            return False, "连接超时 (15s)"
+        except Exception as e:
+            return False, str(e)
     
     def remove_repo(self, repo_id: str) -> bool:
         """删除仓库"""
@@ -174,64 +231,55 @@ class PollingManager:
         return self._running
     
     def start(self):
-        """启动轮询"""
-        if self._running:
-            logger.warning("轮询已在运行中")
+        """启动轮询（作为守护线程）"""
+        if self._thread and self._thread.is_alive():
             return
         
         self._running = True
         self._thread = threading.Thread(target=self._polling_loop, daemon=True)
         self._thread.start()
-        
-        # 持久化状态
-        SettingsManager.set('polling_enabled', 'true')
-        logger.info("轮询任务已启动")
-    
+        logger.info("轮询服务已启动（后台守护模式）")
+
     def stop(self):
-        """停止轮询"""
+        """停止轮询服务"""
         self._running = False
         if self._thread:
-            self._thread.join(timeout=5)
-            self._thread = None
-        
-        # 持久化状态
-        SettingsManager.set('polling_enabled', 'false')
-        logger.info("轮询任务已停止")
+            self._thread.join(timeout=1)
+        logger.info("轮询服务已停止")
     
-    def auto_start_if_enabled(self, review_callback):
-        """如果之前启用了轮询，自动恢复"""
-        self.set_review_callback(review_callback)
-        if SettingsManager.get_bool('polling_enabled', False):
-            logger.info("检测到轮询状态为启用，自动恢复轮询...")
-            self.start()
     
     def _polling_loop(self):
         """轮询主循环"""
         while self._running:
             try:
-                interval = SettingsManager.get_int('polling_interval', 5)
-                
-                # 获取仓库列表快照（线程安全）
+                # 获取全量仓库列表快照
                 with self._repos_lock:
                     repos_snapshot = list(self._repos.values())
                 
-                # 检查所有启用的仓库（只处理轮询模式或混合模式）
+                now = time.time()
+                
+                # 检查所有启用的仓库
                 for repo in repos_snapshot:
                     if not self._running:
                         break
-                    if not repo.enabled:
-                        continue
-                    # 只处理trigger_mode为polling或both的仓库
-                    if repo.trigger_mode not in ['polling', 'both']:
+                    
+                    if not repo.enabled or repo.trigger_mode not in ['polling', 'both']:
                         continue
                     
-                    try:
-                        self._check_repo(repo)
-                    except Exception as e:
-                        logger.error(f"检查仓库 {repo.name} 失败: {e}", exc_info=True)
+                    # 检查是否到了该仓库的轮询时间
+                    interval_seconds = repo.polling_interval * 60
+                    last_poll = self._last_poll_times.get(repo.id, 0)
+                    
+                    if now - last_poll >= interval_seconds:
+                        try:
+                            logger.info(f"开始轮询仓库: {repo.name} (间隔: {repo.polling_interval}分)")
+                            self._check_repo(repo)
+                            self._last_poll_times[repo.id] = now
+                        except Exception as e:
+                            logger.error(f"检查仓库 {repo.name} 失败: {e}", exc_info=True)
                 
-                # 等待下一次轮询
-                for _ in range(interval * 60):
+                # 短暂休眠，避免空转消耗CPU
+                for _ in range(10):  # 每10秒扫描一次任务列表
                     if not self._running:
                         break
                     time.sleep(1)
@@ -299,21 +347,16 @@ class PollingManager:
             if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
                 auth_url = convert_to_http_auth_url(
                     repo.url,
-                    repo.http_user,
-                    repo.http_password,
-                    git_server_url
+                    http_user=repo.http_user,
+                    http_password=repo.http_password,
+                    server_url=git_server_url
                 )
             elif repo.auth_type == 'token' and repo.token:
-                from urllib.parse import urlparse, urlunparse
-                parsed = urlparse(repo.url)
-                auth_url = urlunparse((
-                    parsed.scheme,
-                    f"{repo.token}@{parsed.netloc}",
-                    parsed.path,
-                    parsed.params,
-                    parsed.query,
-                    parsed.fragment
-                ))
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    token=repo.token,
+                    server_url=git_server_url
+                )
             
             # 使用git ls-remote获取远程分支的最新commit SHA
             cmd = ['git', 'ls-remote', auth_url, f'refs/heads/{repo.branch}']
@@ -362,21 +405,16 @@ class PollingManager:
             if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
                 auth_url = convert_to_http_auth_url(
                     repo.url,
-                    repo.http_user,
-                    repo.http_password,
-                    git_server_url
+                    http_user=repo.http_user,
+                    http_password=repo.http_password,
+                    server_url=git_server_url
                 )
             elif repo.auth_type == 'token' and repo.token:
-                from urllib.parse import urlparse, urlunparse
-                parsed = urlparse(repo.url)
-                auth_url = urlunparse((
-                    parsed.scheme,
-                    f"{repo.token}@{parsed.netloc}",
-                    parsed.path,
-                    parsed.params,
-                    parsed.query,
-                    parsed.fragment
-                ))
+                auth_url = convert_to_http_auth_url(
+                    repo.url,
+                    token=repo.token,
+                    server_url=git_server_url
+                )
             
             # 根据平台选择MR refs模式
             platform = repo.platform
@@ -429,6 +467,7 @@ class PollingManager:
                         'title': f'MR #{mr_id}',
                         'source_branch': f'mr-{mr_id}',
                         'target_branch': repo.branch,
+                        'source_ref': ref,  # 如 refs/merge-requests/123/head
                     })
             
             # 按ID排序（最新的在前）
@@ -442,174 +481,6 @@ class PollingManager:
             logger.error(f"获取MR失败: {e}")
             return []
     
-    def _build_auth_info(self, platform: str, token: str, http_user: str, http_password: str) -> dict:
-        """
-        构建认证信息
-        优先使用API Token，如果没有则使用HTTP Basic认证
-        返回: {"headers": {...}, "auth": (user, pass) or None}
-        """
-        headers = {}
-        auth = None
-        
-        if token:
-            # 使用API Token认证
-            if platform == 'gitlab':
-                headers["PRIVATE-TOKEN"] = token
-            elif platform == 'gitea':
-                headers["Authorization"] = f"token {token}"
-            elif platform == 'github':
-                headers["Authorization"] = f"token {token}"
-                headers["Accept"] = "application/vnd.github.v3+json"
-        elif http_user and http_password:
-            # 使用HTTP Basic认证
-            auth = (http_user, http_password)
-            logger.debug(f"使用HTTP Basic认证 (用户: {http_user})")
-        else:
-            logger.warning("未配置认证信息 (API Token 或 HTTP用户名/密码)")
-        
-        return {"headers": headers, "auth": auth}
-    
-    def _extract_project_path(self, url: str, platform: str) -> Optional[str]:
-        """从URL提取项目路径"""
-        # SSH格式: git@host:group/project.git
-        ssh_match = re.match(r'git@[^:]+:(.+?)(?:\.git)?$', url)
-        if ssh_match:
-            return ssh_match.group(1)
-        
-        # HTTP格式: http(s)://host/group/project.git
-        http_match = re.match(r'https?://[^/]+/(.+?)(?:\.git)?$', url)
-        if http_match:
-            return http_match.group(1)
-        
-        return None
-    
-    def _get_new_commits(self, platform: str, api_url: str, auth_info: dict, 
-                         project_path: str, branch: str, last_commit_id: str,
-                         effective_time: Optional[datetime] = None) -> List[dict]:
-        """获取新提交（支持生效时间过滤）"""
-        try:
-            from urllib.parse import quote
-            encoded_path = quote(project_path, safe='')
-            
-            if platform == 'gitlab':
-                url = f"{api_url}/projects/{encoded_path}/repository/commits"
-                params = {"ref_name": branch, "per_page": 10}
-                # GitLab支持since参数
-                if effective_time:
-                    params["since"] = effective_time.isoformat()
-            elif platform == 'gitea':
-                url = f"{api_url}/repos/{project_path}/commits"
-                params = {"sha": branch, "limit": 10}
-            elif platform == 'github':
-                url = f"{api_url}/repos/{project_path}/commits"
-                params = {"sha": branch, "per_page": 10}
-                # GitHub支持since参数
-                if effective_time:
-                    params["since"] = effective_time.isoformat()
-            else:
-                return []
-            
-            response = requests.get(
-                url, 
-                headers=auth_info.get('headers', {}),
-                auth=auth_info.get('auth'),
-                params=params, 
-                timeout=30
-            )
-            response.raise_for_status()
-            commits = response.json()
-            
-            # 过滤出新提交
-            new_commits = []
-            for commit in commits:
-                commit_id = commit.get('id') or commit.get('sha')
-                if commit_id == last_commit_id:
-                    break
-                
-                # 客户端时间过滤（用于Gitea或API不支持since的情况）
-                if effective_time:
-                    commit_time_str = commit.get('committed_date') or commit.get('commit', {}).get('committer', {}).get('date', '')
-                    if commit_time_str:
-                        try:
-                            commit_time = datetime.fromisoformat(commit_time_str.replace('Z', '+00:00'))
-                            if commit_time < effective_time:
-                                continue  # 跳过早于生效时间的提交
-                        except ValueError:
-                            pass
-                
-                new_commits.append({
-                    'id': commit_id,
-                    'message': commit.get('message') or commit.get('commit', {}).get('message', ''),
-                    'author': commit.get('author_name') or commit.get('commit', {}).get('author', {}).get('name', ''),
-                })
-            
-            return new_commits
-            
-        except Exception as e:
-            logger.error(f"获取提交列表失败: {e}")
-            return []
-    
-    def _get_new_mrs(self, platform: str, api_url: str, auth_info: dict,
-                     project_path: str, last_mr_id: int,
-                     effective_time: Optional[datetime] = None) -> List[dict]:
-        """获取新MR（支持生效时间过滤）"""
-        try:
-            from urllib.parse import quote
-            encoded_path = quote(project_path, safe='')
-            
-            if platform == 'gitlab':
-                url = f"{api_url}/projects/{encoded_path}/merge_requests"
-                params = {"state": "opened", "per_page": 10}
-                # GitLab支持created_after参数
-                if effective_time:
-                    params["created_after"] = effective_time.isoformat()
-            elif platform == 'gitea':
-                url = f"{api_url}/repos/{project_path}/pulls"
-                params = {"state": "open", "limit": 10}
-            elif platform == 'github':
-                url = f"{api_url}/repos/{project_path}/pulls"
-                params = {"state": "open", "per_page": 10}
-            else:
-                return []
-            
-            response = requests.get(
-                url, 
-                headers=auth_info.get('headers', {}),
-                auth=auth_info.get('auth'),
-                params=params, 
-                timeout=30
-            )
-            response.raise_for_status()
-            mrs = response.json()
-            
-            # 过滤出新MR
-            new_mrs = []
-            for mr in mrs:
-                mr_iid = mr.get('iid') or mr.get('number')
-                if mr_iid and mr_iid > last_mr_id:
-                    # 客户端时间过滤（用于Gitea/GitHub或API不支持的情况）
-                    if effective_time:
-                        created_at_str = mr.get('created_at') or ''
-                        if created_at_str:
-                            try:
-                                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                                if created_at < effective_time:
-                                    continue  # 跳过早于生效时间的MR
-                            except ValueError:
-                                pass
-                    
-                    new_mrs.append({
-                        'iid': mr_iid,
-                        'title': mr.get('title', ''),
-                        'source_branch': mr.get('source_branch') or mr.get('head', {}).get('ref', ''),
-                        'target_branch': mr.get('target_branch') or mr.get('base', {}).get('ref', ''),
-                    })
-            
-            return new_mrs
-            
-        except Exception as e:
-            logger.error(f"获取MR列表失败: {e}")
-            return []
     
     def _trigger_review(self, repo: PollingRepo, strategy: str, item: dict):
         """触发代码审查"""
@@ -619,7 +490,7 @@ class PollingManager:
         
         # 使用仓库级别的配置
         platform = repo.platform
-        project_path = self._extract_project_path(repo.url, platform)
+        project_path = extract_project_path(repo.url)
         
         # 从project_path解析owner和repo_name (格式: owner/repo 或 group/subgroup/repo)
         path_parts = project_path.split('/') if project_path else []
@@ -634,12 +505,24 @@ class PollingManager:
         if repo.auth_type == 'http_basic' and repo.http_user and repo.http_password:
             clone_url = convert_to_http_auth_url(
                 repo.url,
-                repo.http_user,
-                repo.http_password,
-                git_server_url
+                http_user=repo.http_user,
+                http_password=repo.http_password,
+                server_url=git_server_url
             )
-            logger.debug(f"已转换为HTTP认证URL")
+        elif repo.auth_type == 'token' and repo.token:
+            clone_url = convert_to_http_auth_url(
+                repo.url,
+                token=repo.token,
+                server_url=git_server_url
+            )
         
+        # 如果是纯轮询方式，不支持评论回写 (Requirement 3)
+        enable_comment = repo.enable_comment
+        if repo.trigger_mode == 'polling':
+            if enable_comment:
+                logger.info(f"仓库 {repo.name} 为纯轮询模式，已自动禁用评论回写")
+            enable_comment = False
+
         context = {
             'strategy': strategy,
             'platform': platform,
@@ -650,12 +533,14 @@ class PollingManager:
             'author_name': item.get('author', 'Polling'),
             'author_email': '',
             'local_path': repo.get_local_path(),  # 使用仓库配置的存储路径
-            'enable_comment': repo.enable_comment,  # 仓库级评论开关
+            'enable_comment': enable_comment,  # 仓库级评论开关
             # 仓库级认证信息（用于评论回写）
             'repo_token': repo.token,
             'repo_http_user': repo.http_user,
             'repo_http_password': repo.http_password,
             'repo_api_url': repo.api_url,  # 仓库级API地址
+            # 生效时间（用于过滤旧提交）
+            'effective_time': repo.effective_time,
         }
         
         if strategy == 'commit':
@@ -665,7 +550,9 @@ class PollingManager:
             context['mr_iid'] = item['iid']
             context['pr_number'] = item['iid']  # Gitea/GitHub 使用 pr_number
             context['target_branch'] = item['target_branch']
+            context['source_ref'] = item.get('source_ref', '')  # MR 源分支 ref
             logger.info(f"触发MR审查: {repo.name} - MR#{item['iid']}")
+
         
         try:
             # 使用已转换的HTTP认证URL调用审查
@@ -676,10 +563,8 @@ class PollingManager:
     def get_status(self) -> dict:
         """获取轮询状态"""
         return {
-            "running": self._running,
             "repos_count": len(self._repos),
             "enabled_repos": sum(1 for r in self._repos.values() if r.enabled),
-            "interval": SettingsManager.get_int('polling_interval', 5),
         }
     
     def clone_repo(self, repo: PollingRepo) -> dict:
@@ -755,22 +640,16 @@ class PollingManager:
             if auth_type == 'http_basic' and http_user and http_password:
                 auth_url = convert_to_http_auth_url(
                     repo_url,
-                    http_user,
-                    http_password,
-                    git_server_url
+                    http_user=http_user,
+                    http_password=http_password,
+                    server_url=git_server_url
                 )
             elif auth_type == 'token' and token:
-                # Token认证格式: https://token@host/path
-                from urllib.parse import urlparse, urlunparse
-                parsed = urlparse(repo_url)
-                auth_url = urlunparse((
-                    parsed.scheme,
-                    f"{token}@{parsed.netloc}",
-                    parsed.path,
-                    parsed.params,
-                    parsed.query,
-                    parsed.fragment
-                ))
+                auth_url = convert_to_http_auth_url(
+                    repo_url,
+                    token=token,
+                    server_url=git_server_url
+                )
             
             # 执行git ls-remote获取分支
             cmd = ['git', 'ls-remote', '--heads', auth_url]

@@ -649,9 +649,6 @@ async function loadSettings() {
 
     // 加载轮询数据
     loadPollingData();
-
-    // 根据触发模式显示/隐藏轮询仓库区域
-    togglePollingUI();
 }
 
 async function saveSettings(e) {
@@ -665,7 +662,7 @@ async function saveSettings(e) {
     const settings = {};
 
     // 文本输入 - 只包含表单中实际存在的字段
-    ['vllm_api_base', 'vllm_api_key', 'vllm_model_name', 'aider_map_tokens'].forEach(key => {
+    ['vllm_api_base', 'vllm_api_key', 'vllm_model_name', 'aider_map_tokens', 'aider_review_max_tokens'].forEach(key => {
         settings[key] = formData.get(key) || '';
     });
 
@@ -674,7 +671,6 @@ async function saveSettings(e) {
 
     // 轮询配置
     settings['trigger_mode'] = formData.get('trigger_mode') || 'webhook';
-    settings['polling_interval'] = formData.get('polling_interval') || '5';
 
     // 发送保存请求
     try {
@@ -801,21 +797,12 @@ async function loadPollingData() {
     }
 }
 
-// 更新轮询状态UI
+// 更新轮询状态显示
 function updatePollingStatusUI(status) {
-    const btn = document.getElementById('polling-toggle-btn');
     const statusEl = document.getElementById('polling-status');
-
-    if (status.running) {
-        btn.textContent = '⏹️ 停止轮询';
-        btn.classList.add('btn-danger');
+    if (statusEl) {
         statusEl.className = 'test-result success';
-        statusEl.textContent = `✓ 运行中 (${status.enabled_repos}/${status.repos_count} 个仓库, 每${status.interval}分钟)`;
-    } else {
-        btn.textContent = '▶️ 启动轮询';
-        btn.classList.remove('btn-danger');
-        statusEl.className = 'test-result';
-        statusEl.textContent = status.repos_count > 0 ? `已配置 ${status.repos_count} 个仓库` : '';
+        statusEl.textContent = `✓ 活跃中 (${status.enabled_repos}/${status.repos_count} 个仓库正在监控中)`;
     }
 }
 
@@ -840,6 +827,8 @@ function renderReposList(repos) {
                 <div class="repo-url">${repo.url}</div>
                 <div class="repo-meta">
                     分支: ${repo.branch} | 
+                    模式: ${repo.trigger_mode === 'polling' ? '🔄轮询' : repo.trigger_mode === 'webhook' ? '🔔Webhook' : '🔄🔔混合'} |
+                    ${repo.trigger_mode !== 'webhook' ? `间隔: ${repo.polling_interval}分 |` : ''}
                     ${repo.poll_commits ? '✓提交' : ''} 
                     ${repo.poll_mrs ? '✓MR' : ''} |
                     ${repo.enabled ? '🟢启用' : '🔴禁用'}
@@ -936,6 +925,21 @@ function toggleTriggerModeFields() {
     // 轮询配置：polling/both模式显示
     if (pollingConfigGroup) {
         pollingConfigGroup.style.display = (triggerMode === 'polling' || triggerMode === 'both') ? 'block' : 'none';
+    }
+
+    // 评论回写：纯轮询不支持 (Requirement 3)
+    const commentGroup = document.querySelector('#add-repo-modal input[id$="enable-comment"]').closest('.form-group');
+    if (triggerMode === 'polling') {
+        commentGroup.style.opacity = '0.5';
+        commentGroup.querySelector('input').checked = false;
+        commentGroup.querySelector('input').disabled = true;
+        // 隐藏API地址字段
+        const apiUrlField = document.getElementById('api-url-field');
+        if (apiUrlField) apiUrlField.style.display = 'none';
+    } else {
+        commentGroup.style.opacity = '1';
+        commentGroup.querySelector('input').disabled = false;
+        toggleApiUrlField();
     }
 
     // Webhook配置：webhook/both模式显示
@@ -1154,6 +1158,7 @@ async function addRepo() {
                 effective_time: effectiveTime,
                 poll_commits: pollCommits,
                 poll_mrs: pollMrs,
+                polling_interval: parseInt(document.getElementById('new-repo-polling-interval')?.value) || 5,
                 enable_comment: enableComment,
                 trigger_mode: triggerMode,
                 webhook_secret: webhookSecret,
@@ -1350,9 +1355,24 @@ async function showEditRepoModal(repoId) {
         document.getElementById('edit-repo-http-password').value = repo.http_password || '';
         document.getElementById('edit-repo-token').value = repo.token || '';
         document.getElementById('edit-repo-api-url').value = repo.api_url || '';
-        document.getElementById('edit-repo-commits').checked = repo.poll_commits !== false;
-        document.getElementById('edit-repo-mrs').checked = repo.poll_mrs === true;
-        document.getElementById('edit-repo-enable-comment').checked = repo.enable_comment !== false;
+        document.getElementById('edit-repo-commits').checked = repo.poll_commits;
+        document.getElementById('edit-repo-mrs').checked = repo.poll_mrs;
+        document.getElementById('edit-repo-polling-interval').value = repo.polling_interval || 5;
+        document.getElementById('edit-repo-enable-comment').checked = repo.enable_comment;
+
+        // 处理评论开关的状态 (Requirement 3)
+        const commentInput = document.getElementById('edit-repo-enable-comment');
+        const commentHint = document.getElementById('edit-comment-hint');
+        if (repo.trigger_mode === 'polling') {
+            commentInput.checked = false;
+            commentInput.disabled = true;
+            commentInput.closest('.form-group').style.opacity = '0.5';
+            commentHint.style.display = 'block';
+        } else {
+            commentInput.disabled = false;
+            commentInput.closest('.form-group').style.opacity = '1';
+            commentHint.style.display = 'none';
+        }
 
         // 切换认证字段显示
         toggleEditAuthFields();
@@ -1395,6 +1415,7 @@ async function saveEditedRepo() {
         api_url: document.getElementById('edit-repo-api-url').value.trim(),
         poll_commits: document.getElementById('edit-repo-commits').checked,
         poll_mrs: document.getElementById('edit-repo-mrs').checked,
+        polling_interval: parseInt(document.getElementById('edit-repo-polling-interval').value) || 5,
         enable_comment: document.getElementById('edit-repo-enable-comment').checked,
     };
 
@@ -1426,30 +1447,8 @@ async function saveEditedRepo() {
     }
 }
 
-// 切换轮询开关
-async function togglePolling() {
-    const btn = document.getElementById('polling-toggle-btn');
-    const isRunning = btn.textContent.includes('停止');
-
-    try {
-        const endpoint = isRunning ? '/api/polling/stop' : '/api/polling/start';
-        const response = await fetch(endpoint, { method: 'POST' });
-
-        if (response.ok) {
-            // 重新加载状态
-            setTimeout(loadPollingData, 500);
-        }
-    } catch (error) {
-        console.error('操作失败:', error);
-    }
-}
 
 // 切换轮询UI显示
-function togglePollingUI() {
-    const mode = document.querySelector('[name="trigger_mode"]').value;
-    const section = document.getElementById('polling-repos-section');
-    section.style.display = mode === 'polling' ? 'block' : 'none';
-}
 
 // ==================== 初始化 ====================
 

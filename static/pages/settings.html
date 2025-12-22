@@ -1,0 +1,93 @@
+<div class="page-header">
+    <h1 class="page-title">系统设置</h1>
+    <p class="page-subtitle">配置服务参数，保存后立即生效</p>
+</div>
+
+<form id="settings-form">
+
+    <!-- vLLM 配置 -->
+    <div class="settings-card">
+        <h3 class="settings-title">🤖 vLLM 模型配置</h3>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label>API地址</label>
+                <input type="text" name="vllm_api_base" class="form-input" placeholder="http://192.168.1.100:8000/v1">
+            </div>
+            <div class="form-group">
+                <label>API密钥</label>
+                <input type="text" name="vllm_api_key" class="form-input" placeholder="sk-xxx">
+            </div>
+            <div class="form-group full-width">
+                <label>模型名称</label>
+                <input type="text" name="vllm_model_name" class="form-input" placeholder="openai/qwen-2.5-coder-32b">
+                <small class="form-hint">使用 openai/ 前缀让Aider使用OpenAI协议</small>
+            </div>
+            <div class="form-group full-width">
+                <button type="button" class="btn btn-test" onclick="testVllmConnection()">
+                    🧪 测试模型
+                </button>
+                <span id="vllm-test-result" class="test-result"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aider 配置 -->
+    <div class="settings-card">
+        <h3 class="settings-title">🔧 Aider 配置</h3>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label>RepoMap Token数</label>
+                <input type="number" name="aider_map_tokens" class="form-input" placeholder="262144">
+                <small class="form-hint">较大值提供更好的上下文</small>
+            </div>
+            <div class="form-group">
+                <label class="toggle-label">
+                    <input type="checkbox" name="aider_no_repo_map" class="toggle-input">
+                    <span class="toggle-switch"></span>
+                    <span>禁用 RepoMap</span>
+                </label>
+                <small class="form-hint">显存不足时可开启</small>
+            </div>
+            <div class="form-group">
+                <label>单次审查Token上限</label>
+                <input type="number" name="aider_review_max_tokens" class="form-input" placeholder="100000"
+                    value="100000">
+                <small class="form-hint">超出后自动分批，保留 Repo Map</small>
+            </div>
+            <div class="form-group full-width">
+                <button type="button" class="btn btn-test" onclick="testAider()">
+                    ✅ 验证 Aider
+                </button>
+                <span id="aider-test-result" class="test-result"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 监控仓库管理 -->
+    <div class="settings-card">
+        <h3 class="settings-title">📦 监控仓库列表</h3>
+
+        <!-- 仓库列表 -->
+        <div id="polling-repos-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div></div>
+                <button type="button" class="btn btn-primary" onclick="showAddRepoModal()">
+                    ➕ 添加仓库
+                </button>
+            </div>
+            <div id="repos-list" class="repos-list">
+                <!-- 仓库列表将通过JS动态渲染 -->
+            </div>
+        </div>
+
+        <!-- 轮询状态显示 -->
+        <div class="form-group full-width" style="margin-top: 8px;">
+            <span id="polling-status" class="test-result"></span>
+        </div>
+    </div>
+
+    <div class="settings-actions">
+        <button type="submit" class="btn btn-primary">💾 保存设置</button>
+        <span id="settings-status" class="settings-status"></span>
+    </div>
+</form>

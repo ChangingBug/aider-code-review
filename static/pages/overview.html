@@ -1,0 +1,72 @@
+<div class="page-header">
+    <h1 class="page-title">仪表盘概览</h1>
+    <p class="page-subtitle">AI代码审查系统运行状态一览</p>
+</div>
+
+<!-- 统计卡片 -->
+<div class="stats-grid" id="overview-stats">
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon primary">📋</div>
+        </div>
+        <div class="stat-value" id="stat-total">--</div>
+        <div class="stat-label">总审查次数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon success">✅</div>
+        </div>
+        <div class="stat-value" id="stat-completed">--</div>
+        <div class="stat-label">已完成审查</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon warning">⚠️</div>
+        </div>
+        <div class="stat-value" id="stat-issues">--</div>
+        <div class="stat-label">发现问题总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon danger">🔴</div>
+        </div>
+        <div class="stat-value" id="stat-critical">--</div>
+        <div class="stat-label">严重问题</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon info">⚡</div>
+        </div>
+        <div class="stat-value" id="stat-avg-time">--</div>
+        <div class="stat-label">平均处理时间(秒)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-header">
+            <div class="stat-icon success">⭐</div>
+        </div>
+        <div class="stat-value" id="stat-avg-score">--</div>
+        <div class="stat-label">平均质量评分</div>
+    </div>
+</div>
+
+<!-- 图表 -->
+<div class="chart-grid">
+    <div class="chart-card full-width">
+        <h3 class="chart-title">📈 每日审查趋势</h3>
+        <div class="chart-container">
+            <canvas id="chart-daily-trend"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <h3 class="chart-title">📊 审查类型分布</h3>
+        <div class="chart-container">
+            <canvas id="chart-review-type"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <h3 class="chart-title">🔴 问题严重程度分布</h3>
+        <div class="chart-container">
+            <canvas id="chart-issue-severity"></canvas>
+        </div>
+    </div>
+</div>

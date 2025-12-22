@@ -1,0 +1,346 @@
+<!-- 添加仓库模态框 -->
+<div class="modal-overlay" id="add-repo-modal">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3 class="modal-title">添加监控仓库</h3>
+            <button class="modal-close" onclick="closeAddRepoModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <!-- Git平台和鉴权方式 -->
+            <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>Git平台</label>
+                    <select id="new-repo-platform" class="form-input" onchange="onPlatformChange()">
+                        <option value="gitlab">GitLab</option>
+                        <option value="gitea">Gitea</option>
+                        <option value="github">GitHub</option>
+                    </select>
+                    <small class="form-hint">切换后会自动更新API地址</small>
+                </div>
+                <div class="form-group">
+                    <label>鉴权方式</label>
+                    <select id="new-repo-auth-type" class="form-input" onchange="toggleAuthFields()">
+                        <option value="http_basic">用户名/密码</option>
+                        <option value="token">API Token</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- HTTP认证 (根据鉴权方式显示) -->
+            <div id="http-auth-fields" class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>HTTP用户名</label>
+                    <input type="text" id="new-repo-http-user" class="form-input" placeholder="git用户名">
+                </div>
+                <div class="form-group">
+                    <label>HTTP密码</label>
+                    <input type="password" id="new-repo-http-password" class="form-input" placeholder="git密码">
+                </div>
+            </div>
+
+            <!-- Token认证 (根据鉴权方式显示) -->
+            <div id="token-auth-fields" class="form-group" style="display: none;">
+                <label>API Token</label>
+                <input type="password" id="new-repo-token" class="form-input" placeholder="Git API Token">
+            </div>
+
+            <!-- API地址 (仅启用评论回写时显示) -->
+            <div class="form-group" id="api-url-field">
+                <label>API地址</label>
+                <input type="text" id="new-repo-api-url" class="form-input"
+                    placeholder="http://code.example.com/api/v4">
+                <small class="form-hint">自动推断，用于回写评论</small>
+            </div>
+
+            <!-- 仓库URL -->
+            <div class="form-group">
+                <label>仓库URL</label>
+                <input type="text" id="new-repo-url" class="form-input"
+                    placeholder="http://code.example.com/group/project.git" oninput="onRepoUrlChange()">
+                <small class="form-hint">输入URL后自动解析仓库名称和加载分支</small>
+            </div>
+
+            <!-- 仓库名称 -->
+            <div class="form-group">
+                <label>仓库名称</label>
+                <input type="text" id="new-repo-name" class="form-input" placeholder="自动从URL解析">
+            </div>
+
+            <!-- 分支选择 -->
+            <div class="form-group">
+                <label>监控分支</label>
+                <div style="display: flex; gap: 8px;">
+                    <select id="new-repo-branch-select" class="form-input" style="flex: 1;"
+                        onchange="updateBranchInput()">
+                        <option value="">-- 输入URL后加载分支 --</option>
+                    </select>
+                    <button type="button" class="btn btn-test" onclick="loadBranches()" id="load-branches-btn">
+                        🔄 加载
+                    </button>
+                </div>
+                <input type="text" id="new-repo-branch" class="form-input" placeholder="main" value="main"
+                    style="margin-top: 8px;">
+            </div>
+
+            <!-- 存储路径 -->
+            <div class="form-group">
+                <label>本地存储路径</label>
+                <input type="text" id="new-repo-local-path" class="form-input" placeholder="默认: /app/repos/{名称}/{分支}">
+                <small class="form-hint">留空使用默认路径</small>
+            </div>
+
+            <!-- 生效时间 -->
+            <div class="form-group">
+                <label>生效时间</label>
+                <input type="datetime-local" id="new-repo-effective-time" class="form-input">
+                <small class="form-hint">只监控此时间之后的提交和MR（留空表示立即生效）</small>
+            </div>
+
+            <!-- 触发模式 -->
+            <div class="form-group">
+                <label>触发模式</label>
+                <select id="new-repo-trigger-mode" class="form-select" onchange="toggleTriggerModeFields()">
+                    <option value="polling">🔄 轮询模式 - 定时检查新提交/MR</option>
+                    <option value="webhook">🔔 Webhook模式 - Git平台推送触发</option>
+                    <option value="both">🔄🔔 混合模式 - 同时支持两种方式</option>
+                </select>
+            </div>
+
+            <!-- Webhook密钥（仅webhook/both模式显示） -->
+            <div class="form-group" id="webhook-secret-group" style="display: none;">
+                <label>Webhook密钥</label>
+                <input type="text" id="new-repo-webhook-secret" class="form-input" placeholder="用于验证webhook请求（可选）">
+                <small class="form-hint">在Git平台配置Webhook时设置相同的密钥</small>
+            </div>
+
+            <!-- 轮询模式配置（仅polling/both模式显示） -->
+            <div id="polling-config-group" class="settings-section polling-section">
+                <div class="section-header">
+                    <span class="section-icon">🔄</span>
+                    <h5 class="section-title">轮询模式配置</h5>
+                </div>
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-commits" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>监控新提交</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-mrs" class="toggle-input">
+                            <span class="toggle-switch"></span>
+                            <span>监控新MR</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>轮询间隔 (分钟)</label>
+                    <input type="number" id="new-repo-polling-interval" class="form-input" value="5" min="1" max="1440">
+                    <small class="form-hint">每个仓库可独立配置检查频率</small>
+                </div>
+            </div>
+
+            <!-- Webhook模式配置（仅webhook/both模式显示） -->
+            <div id="webhook-config-group" class="settings-section webhook-section" style="display: none;">
+                <div class="section-header">
+                    <span class="section-icon">🔔</span>
+                    <h5 class="section-title">Webhook模式配置</h5>
+                </div>
+
+                <!-- Webhook URL提示 -->
+                <div class="form-group"
+                    style="background: var(--bg-hover); padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <label style="color: var(--primary);">📌 Webhook URL（在Git平台配置此地址）</label>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                        <input type="text" id="webhook-url-display" class="form-input"
+                            style="flex: 1; font-family: monospace; font-size: 12px;" readonly>
+                        <button type="button" class="btn btn-test" onclick="copyWebhookUrl()"
+                            style="white-space: nowrap;">
+                            📋 复制
+                        </button>
+                    </div>
+                    <small class="form-hint">将此URL配置到Git平台（GitLab/Gitea/GitHub）的Webhook设置中</small>
+                </div>
+
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-webhook-commits" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>响应Push事件</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="new-repo-webhook-mrs" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>响应MR事件</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 8px;">
+                    <label>监控分支</label>
+                    <input type="text" id="new-repo-webhook-branches" class="form-input"
+                        placeholder="main, develop（逗号分隔，留空表示所有分支）">
+                </div>
+            </div>
+
+            <!-- 通用配置 -->
+            <div class="settings-grid" style="grid-template-columns: 1fr; gap: 12px; margin-top: 12px;">
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="new-repo-enable-comment" class="toggle-input" checked
+                            onchange="toggleApiUrlField()">
+                        <span class="toggle-switch"></span>
+                        <span>评论回写</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 操作结果 -->
+            <div id="add-repo-result" class="test-result" style="margin-top: 12px;"></div>
+
+            <div style="text-align: right; margin-top: 20px;">
+                <button type="button" class="btn btn-test" onclick="closeAddRepoModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addRepo()">➕ 添加并克隆</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑仓库模态框 -->
+<div class="modal-overlay" id="edit-repo-modal">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3 class="modal-title">✏️ 编辑仓库</h3>
+            <button class="modal-close" onclick="closeEditRepoModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="edit-repo-id">
+
+            <!-- 基本信息 -->
+            <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>仓库名称</label>
+                    <input type="text" id="edit-repo-name" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>分支</label>
+                    <input type="text" id="edit-repo-branch" class="form-input">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>仓库URL</label>
+                <input type="text" id="edit-repo-url" class="form-input">
+            </div>
+
+            <!-- 平台和认证 -->
+            <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>Git平台</label>
+                    <select id="edit-repo-platform" class="form-input">
+                        <option value="gitlab">GitLab</option>
+                        <option value="gitea">Gitea</option>
+                        <option value="github">GitHub</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>鉴权方式</label>
+                    <select id="edit-repo-auth-type" class="form-input" onchange="toggleEditAuthFields()">
+                        <option value="http_basic">用户名/密码</option>
+                        <option value="token">API Token</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- HTTP认证 -->
+            <div id="edit-http-auth-fields" class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label>HTTP用户名</label>
+                    <input type="text" id="edit-repo-http-user" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label>HTTP密码</label>
+                    <input type="password" id="edit-repo-http-password" class="form-input">
+                </div>
+            </div>
+
+            <!-- Token认证 -->
+            <div id="edit-token-auth-fields" class="form-group" style="display: none;">
+                <label>API Token</label>
+                <input type="password" id="edit-repo-token" class="form-input">
+            </div>
+
+            <!-- API地址 -->
+            <div class="form-group">
+                <label>API地址</label>
+                <input type="text" id="edit-repo-api-url" class="form-input" placeholder="用于评论回写">
+            </div>
+
+            <!-- 监控配置 -->
+            <div id="edit-polling-group" class="settings-section polling-section">
+                <div class="section-header">
+                    <span class="section-icon">🔄</span>
+                    <h5 class="section-title">轮询配置</h5>
+                </div>
+                <div class="settings-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="edit-repo-commits" class="toggle-input" checked>
+                            <span class="toggle-switch"></span>
+                            <span>轮询提交</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="edit-repo-mrs" class="toggle-input">
+                            <span class="toggle-switch"></span>
+                            <span>轮询MR</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>轮询间隔 (分钟)</label>
+                    <input type="number" id="edit-repo-polling-interval" class="form-input" min="1">
+                </div>
+            </div>
+
+            <div id="edit-comment-group" class="settings-section" style="margin-top: 12px;">
+                <div class="section-header">
+                    <span class="section-icon">💬</span>
+                    <h5 class="section-title">通用配置</h5>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="edit-repo-enable-comment" class="toggle-input" checked>
+                        <span class="toggle-switch"></span>
+                        <span>评论回写</span>
+                    </label>
+                    <small id="edit-comment-hint" class="form-hint"
+                        style="display: none; color: var(--danger);">纯轮询模式不支持评论回写</small>
+                </div>
+            </div>
+
+            <!-- 结果 -->
+            <div id="edit-repo-result" class="test-result" style="margin-top: 12px;"></div>
+
+            <div style="text-align: right; margin-top: 20px;">
+                <button type="button" class="btn btn-test" onclick="closeEditRepoModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveEditedRepo()">💾 保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 审查详情模态框 -->
+<div class="modal-overlay" id="review-modal">
+    <div class="modal" id="review-modal-content" style="padding: 0; max-width: 900px;">
+        <div class="loading" style="padding: 40px; display: flex; flex-direction: column; align-items: center;">
+            <div class="spinner"></div>
+            <p style="margin-top: 12px; color: var(--text-secondary);">准备加载...</p>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,85 @@
+<div class="page-header">
+    <h1 class="page-title">审查记录</h1>
+    <p class="page-subtitle">所有代码审查记录列表</p>
+</div>
+
+<!-- 工具栏 -->
+<div class="toolbar-card">
+    <div class="toolbar-left">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="reviews-search" placeholder="搜索项目、作者或任务ID..."
+                oninput="window.handleSearchInput(event)">
+            <button class="clear-btn" onclick="window.clearFilters()" title="清除筛选">×</button>
+        </div>
+        <select id="reviews-status-filter" class="filter-select">
+            <option value="">全部状态</option>
+            <option value="completed">✅ 已完成</option>
+            <option value="failed">❌ 失败</option>
+            <option value="pending">⏳ 等待中</option>
+            <option value="processing">🔄 进行中</option>
+        </select>
+        <select id="reviews-strategy-filter" class="filter-select">
+            <option value="">全部策略</option>
+            <option value="commit">Commit</option>
+            <option value="merge_request">Merge Request</option>
+        </select>
+    </div>
+    <div class="toolbar-right">
+        <div class="column-filter-dropdown" style="margin-right: 12px;">
+            <button class="btn-outline" onclick="window.toggleColumnMenu()">
+                ⚙️ 显示列
+            </button>
+            <div class="column-menu" id="column-menu">
+                <label><input type="checkbox" checked onchange="window.toggleColumn('project')" data-col="project">
+                    项目/ID</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('strategy')" data-col="strategy">
+                    策略</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('author')" data-col="author">
+                    提交人</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('status')" data-col="status">
+                    状态</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('issues')" data-col="issues">
+                    问题数</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('score')" data-col="score">
+                    评分</label>
+                <label><input type="checkbox" checked onchange="window.toggleColumn('time')" data-col="time"> 时间</label>
+            </div>
+        </div>
+        <span class="total-count" id="reviews-total">共 - 条记录</span>
+    </div>
+</div>
+
+<div class="table-card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th class="col-project sortable" onclick="window.sortReviews('project_name')">
+                    项目/ID <span class="sort-icon">↕</span>
+                </th>
+                <th class="col-strategy">策略</th>
+                <th class="col-author sortable" onclick="window.sortReviews('author_name')">
+                    提交人 <span class="sort-icon">↕</span>
+                </th>
+                <th class="col-status">状态</th>
+                <th class="col-issues sortable" onclick="window.sortReviews('issues_count')">
+                    问题数 <span class="sort-icon">↕</span>
+                </th>
+                <th class="col-score sortable" onclick="window.sortReviews('quality_score')">
+                    评分 <span class="sort-icon">↕</span>
+                </th>
+                <th class="col-time sortable" onclick="window.sortReviews('created_at')">
+                    时间 <span class="sort-icon">↕</span>
+                </th>
+                <th class="col-actions">操作</th>
+            </tr>
+        </thead>
+        <tbody id="reviews-table-body">
+            <tr>
+                <td colspan="8" class="loading">
+                    <div class="spinner"></div>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>

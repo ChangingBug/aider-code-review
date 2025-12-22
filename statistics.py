@@ -4,7 +4,7 @@
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, case
 from sqlalchemy.orm import Session
 
 from models import ReviewRecord, ReviewIssue, ReviewStatus, ReviewStrategy, IssueSeverity
@@ -20,48 +20,42 @@ class StatisticsService:
 
     def get_overview(self) -> Dict[str, Any]:
         """获取概览统计"""
-        total_reviews = self.db.query(ReviewRecord).count()
-        completed_reviews = self.db.query(ReviewRecord).filter(
+        # 基础统计
+        total_reviews = self.db.query(func.count(ReviewRecord.id)).scalar() or 0
+        completed_reviews = self.db.query(func.count(ReviewRecord.id)).filter(
             ReviewRecord.status == ReviewStatus.COMPLETED
-        ).count()
+        ).scalar() or 0
         
+        # 问题统计
         total_issues = self.db.query(func.sum(ReviewRecord.issues_count)).scalar() or 0
+        critical_issues = self.db.query(func.sum(ReviewRecord.critical_count)).scalar() or 0
+        warning_issues = self.db.query(func.sum(ReviewRecord.warning_count)).scalar() or 0
+        suggestion_issues = self.db.query(func.sum(ReviewRecord.suggestion_count)).scalar() or 0
         
-        # 问题分类统计
-        critical = self.db.query(func.sum(ReviewRecord.critical_count)).scalar() or 0
-        warning = self.db.query(func.sum(ReviewRecord.warning_count)).scalar() or 0
-        suggestion = self.db.query(func.sum(ReviewRecord.suggestion_count)).scalar() or 0
+        # 平均值
+        avg_time = self.db.query(func.avg(ReviewRecord.processing_time_seconds)).scalar() or 0
+        avg_score = self.db.query(func.avg(ReviewRecord.quality_score)).scalar() or 0
         
-        # 平均处理时间
-        avg_time = self.db.query(func.avg(ReviewRecord.processing_time_seconds)).filter(
-            ReviewRecord.processing_time_seconds.isnot(None)
-        ).scalar() or 0
-        
-        # 平均质量评分
-        avg_score = self.db.query(func.avg(ReviewRecord.quality_score)).filter(
-            ReviewRecord.quality_score.isnot(None)
-        ).scalar() or 0
-        
-        # 按策略统计
-        commit_count = self.db.query(ReviewRecord).filter(
+        # 策略统计
+        commit_count = self.db.query(func.count(ReviewRecord.id)).filter(
             ReviewRecord.strategy == ReviewStrategy.COMMIT
-        ).count()
-        mr_count = self.db.query(ReviewRecord).filter(
+        ).scalar() or 0
+        mr_count = self.db.query(func.count(ReviewRecord.id)).filter(
             ReviewRecord.strategy == ReviewStrategy.MERGE_REQUEST
-        ).count()
+        ).scalar() or 0
         
         return {
             'total_reviews': total_reviews,
             'completed_reviews': completed_reviews,
             'pending_reviews': total_reviews - completed_reviews,
             'total_issues': int(total_issues),
-            'critical_issues': int(critical),
-            'warning_issues': int(warning),
-            'suggestion_issues': int(suggestion),
+            'critical_issues': int(critical_issues),
+            'warning_issues': int(warning_issues),
+            'suggestion_issues': int(suggestion_issues),
             'avg_processing_time': round(avg_time, 2),
             'avg_quality_score': round(avg_score, 1),
-            'commit_reviews': commit_count,
-            'mr_reviews': mr_count,
+            'commit_reviews': int(commit_count),
+            'mr_reviews': int(mr_count),
         }
 
     def get_daily_trend(self, days: int = 30) -> List[Dict[str, Any]]:
@@ -224,13 +218,71 @@ class StatisticsService:
 
     # ==================== 审查记录查询 ====================
 
-    def get_recent_reviews(self, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """获取最近的审查记录"""
-        total = self.db.query(ReviewRecord).count()
+    def get_recent_reviews(self, limit: int = 50, offset: int = 0,
+                           search: str = None, author: str = None,
+                           project: str = None, status: str = None,
+                           strategy: str = None, sort_by: str = 'created_at',
+                           order: str = 'desc') -> Dict[str, Any]:
+        """获取最近的审查记录（支持搜索、过滤和排序）"""
+        from sqlalchemy import or_, asc
+
+        query = self.db.query(ReviewRecord)
         
-        reviews = self.db.query(ReviewRecord).order_by(
-            desc(ReviewRecord.created_at)
-        ).offset(offset).limit(limit).all()
+        # ... (过滤逻辑保持不变)
+
+        # 搜索过滤
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(or_(
+                ReviewRecord.project_name.ilike(search_pattern),
+                ReviewRecord.author_name.ilike(search_pattern),
+                ReviewRecord.branch.ilike(search_pattern),
+                ReviewRecord.task_id.ilike(search_pattern)
+            ))
+        
+        # 作者过滤
+        if author:
+            query = query.filter(ReviewRecord.author_name.ilike(f"%{author}%"))
+        
+        # 项目过滤
+        if project:
+            query = query.filter(ReviewRecord.project_name.ilike(f"%{project}%"))
+        
+        # 状态过滤
+        if status:
+            try:
+                status_enum = ReviewStatus(status)
+                query = query.filter(ReviewRecord.status == status_enum)
+            except ValueError:
+                pass
+        
+        # 策略过滤
+        if strategy:
+            try:
+                strategy_enum = ReviewStrategy(strategy)
+                query = query.filter(ReviewRecord.strategy == strategy_enum)
+            except ValueError:
+                pass
+        
+        total = query.count()
+        
+        # 排序逻辑
+        sort_column = getattr(ReviewRecord, sort_by, ReviewRecord.created_at)
+        
+        if order == 'asc':
+            query = query.order_by(asc(sort_column))
+        else:
+            query = query.order_by(desc(sort_column))
+            
+        reviews = query.offset(offset).limit(limit).all()
+        
+        return {
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+            'reviews': [r.to_dict() for r in reviews]
+        }
+
         
         return {
             'total': total,

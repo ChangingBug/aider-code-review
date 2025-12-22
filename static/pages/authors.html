@@ -1,0 +1,39 @@
+<div class="page-header">
+    <h1 class="page-title">提交人统计</h1>
+    <p class="page-subtitle">按开发者统计代码质量和提交情况</p>
+</div>
+
+<div class="table-card">
+    <div class="table-header">
+        <h3 class="table-title">开发者排行榜</h3>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>开发者</th>
+                <th>审查次数</th>
+                <th>问题总数</th>
+                <th>严重问题</th>
+                <th>平均评分</th>
+                <th>问题率</th>
+            </tr>
+        </thead>
+        <tbody id="authors-table-body">
+            <tr>
+                <td colspan="6" class="loading">
+                    <div class="spinner"></div>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- 作者活跃度图表 -->
+<div class="chart-grid" style="margin-top: 24px;">
+    <div class="chart-card full-width">
+        <h3 class="chart-title">👥 开发者贡献对比</h3>
+        <div class="chart-container">
+            <canvas id="chart-author-contribution"></canvas>
+        </div>
+    </div>
+</div>
